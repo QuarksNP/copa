@@ -14,6 +14,11 @@ Everything you copy is saved automatically. Hover the notch and your history ope
 
 Copa has no Dock icon. Use the clipboard icon in the menu bar to open Copa, pause capturing, open Settings, or quit.
 
+## Requirements
+
+- A Mac running **macOS 26** (Tahoe) or later. Copa lives in the notch, and on Macs without one it appears as a hidden hot zone at the top center of the screen.
+- **Xcode 26** or later, installed from the [Mac App Store](https://apps.apple.com/app/xcode/id497799835). It's free. The Command Line Tools alone aren't enough to build a Mac app. Open Xcode once after installing it so it can finish setting up.
+
 ## Install (recommended)
 
 Run this in Terminal:
