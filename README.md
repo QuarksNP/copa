@@ -87,3 +87,7 @@ In Debug builds, you can open or close the notch from Terminal:
 ```sh
 swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.copa.debug.toggle"), object: nil, userInfo: nil, deliverImmediately: true)'
 ```
+
+## License
+
+Copyright 2026 Alberto Guzman. Copa is released under the [Apache License 2.0](LICENSE).
