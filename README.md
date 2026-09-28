@@ -9,6 +9,7 @@ Everything you copy is saved automatically. Hover the notch and your history ope
 - **Drop** anything (files, images, text, links) onto the notch. Copa saves it and sorts it into the right tab.
 - **Screenshots** you take (⇧⌘3, ⇧⌘4, ⇧⌘5) show up in Images automatically, ready to copy again. The notch shows a spinner the moment you take one.
 - **Links** show a rich preview (page image, site icon, title).
+- **SVGs** are kept as vectors, whether you copy an .svg file, a graphic from a design app, or SVG code. They paste back as the original SVG, or as a sharp picture in apps that only accept images. SVG copied as code pastes back as code.
 - **Right-click** a card to Pin, Rename, Open Link, Show in Finder, or Delete.
 - **Rename** gives a clip your own name (Return saves, Esc cancels). The name becomes the card's title and works in search. It's only a label in Copa; files on disk are not renamed.
 - **Search** with the field in the top-right. The 📌 button shows pinned clips only.

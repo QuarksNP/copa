@@ -41,6 +41,7 @@ enum BlobStore {
     /// PNG/JPEG/HEIC/GIF are saved byte-for-byte (no decoding or re-encoding, which is slow for
     /// big screenshots); only the thumbnail is decoded, at reduced size.
     nonisolated static func saveImage(_ data: Data) -> SavedImage? {
+        if isSVG(data) { return saveSVG(data) }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Double,
@@ -67,6 +68,44 @@ enum BlobStore {
         guard writePNG(thumbnail, to: url(for: thumbName)) else { return nil }
 
         return SavedImage(imageFilename: imageName, thumbnailFilename: thumbName, width: width, height: height)
+    }
+
+    // MARK: SVG
+
+    /// SVG is text, so look for an `<svg` tag near the start (after any XML header or comments).
+    nonisolated static func isSVG(_ data: Data) -> Bool {
+        guard let head = String(data: data.prefix(2048), encoding: .utf8) else { return false }
+        return head.range(of: "<svg", options: .caseInsensitive) != nil
+    }
+
+    /// ImageIO can't read SVG, but NSImage can. The original vector file is kept as-is;
+    /// only the thumbnail is rendered to PNG.
+    nonisolated private static func saveSVG(_ data: Data) -> SavedImage? {
+        guard let image = NSImage(data: data), image.size.width > 0, image.size.height > 0,
+              let thumbnail = renderPNG(image, maxPixelSize: 480) else { return nil }
+        let id = UUID().uuidString
+        let imageName = "\(id).svg"
+        let thumbName = "\(id)-thumb.png"
+        guard (try? data.write(to: url(for: imageName))) != nil,
+              (try? thumbnail.write(to: url(for: thumbName))) != nil else { return nil }
+        return SavedImage(imageFilename: imageName, thumbnailFilename: thumbName,
+                          width: image.size.width, height: image.size.height)
+    }
+
+    /// Draws an image (e.g. an SVG) into a PNG whose longest side is `maxPixelSize`.
+    nonisolated static func renderPNG(_ image: NSImage, maxPixelSize: CGFloat) -> Data? {
+        let scale = maxPixelSize / max(image.size.width, image.size.height)
+        let width = max(Int(image.size.width * scale), 1)
+        let height = max(Int(image.size.height * scale), 1)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        image.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
     }
 
     /// Saves a downscaled PNG only (used for link preview images and site icons). Runs off the main thread.

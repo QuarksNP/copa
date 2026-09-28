@@ -79,7 +79,27 @@ struct ClipCard: View {
 
         case .image:
             VStack(alignment: .leading, spacing: 6) {
-                if let url = item.thumbnailURL, let image = ImageCache.shared.image(at: url) {
+                if item.isSVG, let url = item.thumbnailURL, let image = ImageCache.shared.image(at: url) {
+                    // Icons and logos: show the whole drawing on a light backdrop, so dark or
+                    // transparent SVGs stay visible on the dark card.
+                    Color(white: 0.92)
+                        .overlay {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(10)
+                        }
+                        .overlay(alignment: .topLeading) {
+                            Text("SVG")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(.black.opacity(0.55), in: .capsule)
+                                .padding(6)
+                        }
+                        .clipShape(.rect(cornerRadius: 10))
+                } else if let url = item.thumbnailURL, let image = ImageCache.shared.image(at: url) {
                     // Fill the available space and crop, without letting the image grow the card.
                     Color.clear
                         .overlay {

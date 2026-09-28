@@ -7,6 +7,8 @@ enum ClipPayload: Sendable {
     case text(String)
     case link(URL, original: String)
     case image(Data)
+    /// SVG copied as code (e.g. Figma's "Copy as SVG"): shown as a picture, pasted back as code.
+    case svgCode(String)
     case files([URL])
     case color(String, hex: String)
 
@@ -14,7 +16,7 @@ enum ClipPayload: Sendable {
         switch self {
         case .text: .text
         case .link: .link
-        case .image: .image
+        case .image, .svgCode: .image
         case .files: .file
         case .color: .color
         }
@@ -26,6 +28,7 @@ enum ClipPayload: Sendable {
         case .text(let string): Data("t:\(string)".utf8)
         case .link(let url, _): Data("l:\(url.absoluteString)".utf8)
         case .image(let data): data
+        case .svgCode(let code): Data(code.utf8)
         case .files(let urls): Data("f:\(urls.map(\.path).joined(separator: "\n"))".utf8)
         case .color(let string, _): Data("c:\(string)".utf8)
         }
@@ -64,7 +67,8 @@ enum ClipClassifier {
         // picture of the selection next to the text; in that case the text is what the user wants.
         if let imageData = imageData(from: pasteboard) {
             let textIsJustTheImageAddress = string.map { isSingleURL($0) } ?? true
-            if string?.isEmpty ?? true || textIsJustTheImageAddress {
+            // An SVG always wins: design apps put its code next to it as text, which is the same drawing.
+            if string?.isEmpty ?? true || textIsJustTheImageAddress || BlobStore.isSVG(imageData) {
                 return .image(imageData)
             }
         }
@@ -77,7 +81,9 @@ enum ClipClassifier {
     }
 
     private static func imageData(from pasteboard: NSPasteboard) -> Data? {
-        for type in [NSPasteboard.PasteboardType.png, .tiff, .init(UTType.jpeg.identifier), .init(UTType.heic.identifier)] {
+        // SVG first: when an app offers both, the vector original beats a flattened copy.
+        for type in [NSPasteboard.PasteboardType(UTType.svg.identifier), .png, .tiff,
+                     .init(UTType.jpeg.identifier), .init(UTType.heic.identifier)] {
             if let data = pasteboard.data(forType: type) { return data }
         }
         return nil
@@ -99,6 +105,10 @@ enum ClipClassifier {
 
     static func payload(fromString raw: String) -> ClipPayload {
         let string = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // SVG code (e.g. Figma's "Copy as SVG", or copied from a code editor) is a picture: show it as one.
+        if isSVGMarkup(string) {
+            return .svgCode(string)
+        }
         if let hex = colorHex(from: string) {
             return .color(string, hex: hex)
         }
@@ -106,6 +116,14 @@ enum ClipClassifier {
             return .link(url, original: string)
         }
         return .text(raw)
+    }
+
+    /// A complete SVG document: starts with `<svg` (optionally after an XML header or comment)
+    /// and ends with `</svg>`.
+    static func isSVGMarkup(_ string: String) -> Bool {
+        guard string.utf8.count < 5_000_000, string.hasSuffix("</svg>") || string.lowercased().hasSuffix("</svg>") else { return false }
+        let head = string.prefix(1024).lowercased()
+        return (head.hasPrefix("<svg") || head.hasPrefix("<?xml") || head.hasPrefix("<!--")) && head.contains("<svg")
     }
 
     private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)

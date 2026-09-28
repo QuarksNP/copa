@@ -70,7 +70,14 @@ final class ClipStore {
             item.colorHex = hex
         case .files(let urls):
             item.filePaths = urls.map(\.path)
-        case .image(let data):
+        case .image, .svgCode:
+            let data: Data
+            if case .svgCode(let code) = payload {
+                data = Data(code.utf8)
+                item.text = code  // remembered so it pastes back as code
+            } else if case .image(let imageData) = payload {
+                data = imageData
+            } else { return nil }
             // Encoding big screenshots takes a moment, so do it in the background.
             guard let saved = await Task.detached(operation: { BlobStore.saveImage(data) }).value else { return nil }
             // Another copy of the same image may have finished first.

@@ -16,7 +16,9 @@ enum PasteboardWriter {
             pasteboard.setString(item.urlString ?? item.text ?? "", forType: .string)
         case .image:
             guard let url = item.imageURL else { return }
-            if url.pathExtension == "png", let data = try? Data(contentsOf: url) {
+            if item.isSVG, let data = try? Data(contentsOf: url) {
+                writeSVG(data, code: item.text, to: pasteboard)
+            } else if url.pathExtension == "png", let data = try? Data(contentsOf: url) {
                 // Already PNG: hand it over as-is instead of converting it.
                 pasteboard.setData(data, forType: .png)
             } else if let image = NSImage(contentsOf: url) {
@@ -25,6 +27,26 @@ enum PasteboardWriter {
         case .file:
             pasteboard.writeObjects(item.fileURLs.filter { FileManager.default.fileExists(atPath: $0.path) }.map { $0 as NSURL })
         }
+    }
+
+    /// Every app gets the SVG in the form it understands: design apps take the vector and apps
+    /// that only accept pictures take a sharp PNG. SVG that was copied as code also goes back as
+    /// code (for Figma and code editors); otherwise text is left out, so text-first apps like
+    /// Notes or Messages paste the picture rather than its source.
+    private static func writeSVG(_ data: Data, code: String?, to pasteboard: NSPasteboard) {
+        let item = NSPasteboardItem()
+        item.setData(data, forType: .init(UTType.svg.identifier))
+        if let code {
+            item.setString(code, forType: .string)
+        }
+        if let image = NSImage(data: data) {
+            // Render at 2× (up to 2048 px) so it stays crisp on Retina screens.
+            let longest = max(image.size.width, image.size.height)
+            if let png = BlobStore.renderPNG(image, maxPixelSize: min(max(longest * 2, 256), 2048)) {
+                item.setData(png, forType: .png)
+            }
+        }
+        pasteboard.writeObjects([item])
     }
 
     /// What other apps receive when a card is dragged out of Copa.

@@ -61,6 +61,9 @@ final class ClipItem {
 
     var thumbnailURL: URL? { thumbnailFilename.map(BlobStore.url(for:)) }
 
+    /// A vector image, kept as the original .svg file.
+    var isSVG: Bool { imageFilename?.hasSuffix(".svg") == true }
+
     var linkImageURL: URL? { linkImageFilename.map(BlobStore.url(for:)) }
 
     var linkIconURL: URL? { linkIconFilename.map(BlobStore.url(for:)) }
@@ -79,7 +82,7 @@ final class ClipItem {
             if let linkTitle, !linkTitle.isEmpty { return linkTitle }
             return (url?.host() ?? "Link").replacingOccurrences(of: "www.", with: "")
         case .image:
-            return "Image"
+            return isSVG ? "SVG" : "Image"
         case .file:
             return filePaths.first.map { ($0 as NSString).lastPathComponent } ?? "File"
         case .color:
