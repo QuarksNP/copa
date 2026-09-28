@@ -44,7 +44,6 @@ struct NotchView: View {
         .clipShape(shape)
         .contentShape(shape)
         .shadow(color: .black.opacity(expanded ? 0.55 : 0), radius: 18, y: 8)
-        .onHover { notch.hoverChanged($0) }
         .onDrop(of: PasteboardWriter.acceptedDropTypes, isTargeted: Bindable(notch).isDropTargeted) { providers in
             guard !notch.isDraggingFromCard else { return false }
             return app.handleDrop(providers)

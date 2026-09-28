@@ -35,6 +35,7 @@ final class ScreenshotWatcher {
     private(set) var pendingCount = 0
 
     @ObservationIgnored private var captureTimer: Timer?
+    @ObservationIgnored private var runningAppsObservation: NSKeyValueObservation?
     /// Capture indicators seen, with when they appeared. Recordings keep theirs on screen.
     @ObservationIgnored private var indicatorsSeenAt: [Int: Date] = [:]
     @ObservationIgnored private var recordingIndicators: Set<Int> = []
@@ -92,15 +93,38 @@ final class ScreenshotWatcher {
         query.start()
         self.query = query
 
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkForNewCapture() }
+        // Only watch closely while the screenshot tool is open (it starts with each screenshot).
+        // The rest of the time Copa does nothing until macOS says an app started or quit.
+        runningAppsObservation = NSWorkspace.shared.observe(\.runningApplications, options: [.initial]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.screenshotToolMayHaveChanged() }
         }
-        timer.tolerance = 0.1
-        RunLoop.main.add(timer, forMode: .common)
-        captureTimer = timer
+    }
+
+    private var isScreenshotToolRunning: Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: Self.screenshotAppID).isEmpty
+    }
+
+    private func screenshotToolMayHaveChanged() {
+        if isScreenshotToolRunning {
+            guard captureTimer == nil else { return }
+            let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkForNewCapture() }
+            }
+            timer.tolerance = 0.1
+            RunLoop.main.add(timer, forMode: .common)
+            captureTimer = timer
+            checkForNewCapture()
+        } else if let timer = captureTimer {
+            timer.invalidate()
+            captureTimer = nil
+            checkForNewCapture()
+            // If nothing arrives shortly after the tool quits, the screenshot isn't coming.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { [weak self] in self?.giveUpIfNothingArrived() }
+        }
     }
 
     func stop() {
+        runningAppsObservation = nil
         captureTimer?.invalidate()
         captureTimer = nil
         pendingCount = 0
@@ -190,11 +214,11 @@ final class ScreenshotWatcher {
     /// before the screenshot tool (screencaptureui) starts, and keeps it for ~3 s. A new indicator
     /// means "a screenshot was just taken". The tool stays open ~11 s after each screenshot.
     ///
-    /// Checked four times a second. The window list is only read while the tool is running,
-    /// so when you're not taking screenshots this costs almost nothing.
+    /// Checked four times a second, but only while the tool is running: when you're not taking
+    /// screenshots, this costs nothing.
     private func checkForNewCapture() {
         guard !monitor.isPaused else { return }
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: Self.screenshotAppID).isEmpty == false else {
+        guard isScreenshotToolRunning else {
             indicatorsSeenAt.removeAll()
             recordingIndicators.removeAll()
             giveUpIfNothingArrived()

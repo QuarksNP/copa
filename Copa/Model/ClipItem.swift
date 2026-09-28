@@ -72,7 +72,8 @@ final class ClipItem {
     var defaultName: String {
         switch kind {
         case .text:
-            let firstLine = (text ?? "").split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+            // Only look at the start: copied text can be megabytes long.
+            let firstLine = (text ?? "").prefix(200).prefix { !$0.isNewline }
             return String(firstLine.trimmingCharacters(in: .whitespaces).prefix(60))
         case .link:
             if let linkTitle, !linkTitle.isEmpty { return linkTitle }
@@ -88,9 +89,10 @@ final class ClipItem {
 
     var displayName: String { customName ?? defaultName }
 
-    /// Text used by the search field.
+    /// Text used by the search field. Very long clips are searched in their first 20,000
+    /// characters, so typing in the search field stays instant.
     var searchableText: String {
-        [customName, text, urlString, linkTitle, filePaths.map { ($0 as NSString).lastPathComponent }.joined(separator: " "), sourceAppName]
+        [customName, text.map { String($0.prefix(20_000)) }, urlString, linkTitle, filePaths.map { ($0 as NSString).lastPathComponent }.joined(separator: " "), sourceAppName]
             .compactMap { $0 }
             .joined(separator: " ")
     }

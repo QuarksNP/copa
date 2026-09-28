@@ -28,25 +28,45 @@ enum BlobStore {
         directory.appending(path: filename)
     }
 
-    /// Decodes any image format and writes a full-size PNG and a thumbnail. Runs off the main thread.
+    /// Formats stored as-is. Anything else (e.g. the uncompressed TIFF that apps put on the
+    /// clipboard) is converted to PNG.
+    nonisolated private static let keptFormats: [String: String] = [
+        UTType.png.identifier: "png",
+        UTType.jpeg.identifier: "jpg",
+        UTType.heic.identifier: "heic",
+        UTType.gif.identifier: "gif",
+    ]
+
+    /// Stores an image and a small thumbnail. Runs off the main thread.
+    /// PNG/JPEG/HEIC/GIF are saved byte-for-byte (no decoding or re-encoding, which is slow for
+    /// big screenshots); only the thumbnail is decoded, at reduced size.
     nonisolated static func saveImage(_ data: Data) -> SavedImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Double,
+              let height = properties[kCGImagePropertyPixelHeight] as? Double else { return nil }
 
         let thumbOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: 480,
         ]
-        let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) ?? image
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else { return nil }
 
         let id = UUID().uuidString
-        let imageName = "\(id).png"
         let thumbName = "\(id)-thumb.png"
-        guard writePNG(image, to: url(for: imageName)), writePNG(thumbnail, to: url(for: thumbName)) else { return nil }
+        let imageName: String
+        if let type = CGImageSourceGetType(source) as String?, let ext = keptFormats[type] {
+            imageName = "\(id).\(ext)"
+            guard (try? data.write(to: url(for: imageName))) != nil else { return nil }
+        } else {
+            imageName = "\(id).png"
+            guard let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                  writePNG(image, to: url(for: imageName)) else { return nil }
+        }
+        guard writePNG(thumbnail, to: url(for: thumbName)) else { return nil }
 
-        return SavedImage(imageFilename: imageName, thumbnailFilename: thumbName,
-                          width: Double(image.width), height: Double(image.height))
+        return SavedImage(imageFilename: imageName, thumbnailFilename: thumbName, width: width, height: height)
     }
 
     /// Saves a downscaled PNG only (used for link preview images and site icons). Runs off the main thread.
@@ -79,7 +99,24 @@ enum BlobStore {
 /// Keeps decoded thumbnails and app icons in memory so scrolling stays smooth.
 final class ImageCache {
     static let shared = ImageCache()
-    private let cache = NSCache<NSURL, NSImage>()
+    private let cache: NSCache<NSURL, NSImage> = {
+        let cache = NSCache<NSURL, NSImage>()
+        cache.countLimit = 150  // thumbnails are small; this keeps memory flat with long histories
+        return cache
+    }()
+    private let fileIcons: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 100
+        return cache
+    }()
+
+    /// Finder icon for a file; asking the system is slow, so each one is looked up once.
+    func fileIcon(path: String) -> NSImage {
+        if let icon = fileIcons.object(forKey: path as NSString) { return icon }
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        fileIcons.setObject(icon, forKey: path as NSString)
+        return icon
+    }
 
     func image(at url: URL) -> NSImage? {
         if let cached = cache.object(forKey: url as NSURL) { return cached }

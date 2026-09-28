@@ -39,3 +39,29 @@ final class NotchPanel: NSPanel {
 final class NotchHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
+
+/// The panel's root view. Tells Copa when the cursor enters or leaves the notch.
+/// A tracking area costs nothing until the cursor crosses the notch, unlike watching
+/// every mouse movement on the system.
+final class HoverTrackingView: NSView {
+    var onHoverChange: ((Bool) -> Void)?
+    private(set) var isHovered = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        // .activeAlways: Copa never becomes the active app, but should still notice the cursor.
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        onHoverChange?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        onHoverChange?(false)
+    }
+}

@@ -15,7 +15,11 @@ enum PasteboardWriter {
             if let url = item.url { pasteboard.writeObjects([url as NSURL]) }
             pasteboard.setString(item.urlString ?? item.text ?? "", forType: .string)
         case .image:
-            if let url = item.imageURL, let image = NSImage(contentsOf: url) {
+            guard let url = item.imageURL else { return }
+            if url.pathExtension == "png", let data = try? Data(contentsOf: url) {
+                // Already PNG: hand it over as-is instead of converting it.
+                pasteboard.setData(data, forType: .png)
+            } else if let image = NSImage(contentsOf: url) {
                 pasteboard.writeObjects([image])
             }
         case .file:

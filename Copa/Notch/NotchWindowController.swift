@@ -76,6 +76,9 @@ final class NotchController {
     // MARK: Private
 
     @ObservationIgnored private let panel = NotchPanel()
+    @ObservationIgnored private let hoverView = HoverTrackingView()
+    /// Watches for clicks outside Copa; only installed while the panel is open.
+    @ObservationIgnored private var clickMonitor: Any?
     @ObservationIgnored private let app: AppModel
     @ObservationIgnored private var screen: NSScreen?
     @ObservationIgnored private var monitors: [Any] = []
@@ -103,11 +106,12 @@ final class NotchController {
         hostingView.sizingOptions = []
         hostingView.safeAreaRegions = []
         // Wrapping the SwiftUI view in a plain container keeps it from fighting AppKit over the window size.
-        let container = NSView()
+        // The container also tells us when the cursor enters the notch.
         hostingView.autoresizingMask = [.width, .height]
-        container.addSubview(hostingView)
-        panel.contentView = container
-        hostingView.frame = container.bounds
+        hoverView.addSubview(hostingView)
+        panel.contentView = hoverView
+        hostingView.frame = hoverView.bounds
+        hoverView.onHoverChange = { [weak self] hovering in self?.hoverChanged(hovering) }
         panel.onEscape = { [weak self] in
             guard let self else { return }
             if self.editingItemID != nil { self.editingItemID = nil } else { self.collapse() }
@@ -175,11 +179,6 @@ final class NotchController {
                       width: size.width, height: size.height)
     }
 
-    private var hoverRect: CGRect {
-        // A little padding on the sides, and up past the top edge so slamming the cursor into the top works.
-        collapsedFrame.insetBy(dx: -6, dy: 0).union(collapsedFrame.offsetBy(dx: 0, dy: 4))
-    }
-
     // MARK: Expand / collapse
 
     func expand(fromMenu: Bool = false) {
@@ -196,11 +195,18 @@ final class NotchController {
         panel.makeKey()
         withAnimation(Self.openAnimation) { isExpanded = true }
         startTracking()
+        // Clicking anywhere else closes the panel.
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self, self.isExpanded, !self.expandedShapeRect.contains(NSEvent.mouseLocation) else { return }
+            self.collapse()
+        }
     }
 
     func collapse() {
         guard isExpanded else { return }
         stopTracking()
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = nil
         searchText = ""
         app.panelDidClose()
         if panel.isKeyWindow {
@@ -325,21 +331,6 @@ final class NotchController {
             (self?.handleKey(event) ?? false) ? nil : event
         }) { monitors.append(keys) }
 
-        // Hovering the notch while collapsed. Mouse-moved monitors need no special permission.
-        let moveEvents: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: moveEvents, handler: { [weak self] _ in
-            self?.mouseMoved()
-        }) { monitors.append(global) }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: moveEvents, handler: { [weak self] event in
-            self?.mouseMoved()
-            return event
-        }) { monitors.append(local) }
-
-        // Clicking anywhere else closes the panel.
-        if let clicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            guard let self, self.isExpanded, !self.expandedShapeRect.contains(NSEvent.mouseLocation) else { return }
-            self.collapse()
-        }) { monitors.append(clicks) }
 
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
@@ -405,27 +396,19 @@ final class NotchController {
         })
     }
 
-    private func mouseMoved() {
-        guard !isExpanded else { return }
-        guard hoverRect.contains(NSEvent.mouseLocation) else {
-            hoverWorkItem?.cancel()
-            hoverWorkItem = nil
-            return
-        }
-        guard hoverWorkItem == nil else { return }
+    /// The cursor entered or left the notch.
+    private func hoverChanged(_ hovering: Bool) {
+        hoverWorkItem?.cancel()
+        hoverWorkItem = nil
+        guard hovering, !isExpanded else { return }
         // Wait a moment so the panel doesn't pop open when the cursor just passes by.
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.hoverWorkItem = nil
-            if self.hoverRect.contains(NSEvent.mouseLocation) { self.expand() }
+            if self.hoverView.isHovered { self.expand() }
         }
         hoverWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
-    }
-
-    /// Called by the collapsed notch view when the cursor enters it.
-    func hoverChanged(_ hovering: Bool) {
-        if hovering { mouseMoved() }
     }
 
     /// While expanded, poll the cursor so we can close once it leaves — this also works

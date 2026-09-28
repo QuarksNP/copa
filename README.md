@@ -1,6 +1,6 @@
 # Copa
 
-A free clipboard history that lives in your MacBook's notch.
+A free, lightweight clipboard history that lives in your MacBook's notch.
 
 Everything you copy is saved automatically. Hover the notch and your history opens as a carousel with these tabs: **All · Text · Links · Images · Files · Colors**.
 
@@ -12,8 +12,13 @@ Everything you copy is saved automatically. Hover the notch and your history ope
 - **Right-click** a card to Pin, Rename, Open Link, Show in Finder, or Delete.
 - **Rename** gives a clip your own name (Return saves, Esc cancels). The name becomes the card's title and works in search. It's only a label in Copa; files on disk are not renamed.
 - **Search** with the field in the top-right. The 📌 button shows pinned clips only.
+- **Keyboard:** while Copa is open, ← → move between cards, **Delete** removes the selected one (the latest copy by default), and **Return** copies it and closes Copa.
 
 Copa has no Dock icon. Use the clipboard icon in the menu bar to open Copa, pause capturing, open Settings, or quit.
+
+## Lightweight by design
+
+Copa runs all day in the background, so it's built to be **fast, lightweight and gentle on your battery**. It stays asleep until there's something to do. It never watches your mouse or your screen. And it keeps your images exactly as they are instead of reprocessing them. You shouldn't notice it's running until you reach for it.
 
 ## Requirements
 
@@ -96,6 +101,8 @@ Copa/
 ```
 
 Any new `.swift` file you add inside the `Copa/` folder is picked up by Xcode automatically.
+
+**Contributing:** performance is a rule in this project. Before adding timers, observers or per-item work in views, read the budget and rules in [`CLAUDE.md`](CLAUDE.md) and measure before and after.
 
 ### Developer tip
 

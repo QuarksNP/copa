@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 /// One clip in the carousel. Click to copy, drag to use it anywhere, right-click for more.
@@ -13,6 +14,16 @@ struct ClipCard: View {
     private var isSelected: Bool { notch.selection == item.id }
 
     var body: some View {
+        // A deleted clip can be drawn once more during its removal animation, when its data is
+        // already gone; reading it then would crash, so draw an empty space instead.
+        if item.isDeleted || item.modelContext == nil {
+            Color.clear.frame(width: Self.size.width, height: Self.size.height)
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 8) {
             preview
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -56,7 +67,8 @@ struct ClipCard: View {
                 if let name = item.customName {
                     nameLabel(name)
                 }
-                Text(item.text ?? "")
+                // The card shows ~7 lines, so don't lay out more text than that (clips can be huge).
+                Text((item.text ?? "").prefix(600))
                     .font(.system(size: 12))
                     .lineLimit(item.customName == nil ? 7 : 5)
                     .foregroundStyle(item.customName == nil ? .primary : .secondary)
@@ -343,7 +355,7 @@ private struct FilePreview: View {
         let first = paths.first ?? ""
         let exists = FileManager.default.fileExists(atPath: first)
         VStack(alignment: .leading, spacing: 6) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: first))
+            Image(nsImage: ImageCache.shared.fileIcon(path: first))
                 .resizable()
                 .frame(width: 52, height: 52)
                 .opacity(exists ? 1 : 0.4)
