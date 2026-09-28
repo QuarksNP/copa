@@ -47,6 +47,15 @@ final class HoverTrackingView: NSView {
     var onHoverChange: ((Bool) -> Void)?
     private(set) var isHovered = false
 
+    // Anchor content at the top, like the notch itself: if it's ever briefly the wrong size,
+    // the notch shows the panel's black top edge rather than a slice from the bottom.
+    override var isFlipped: Bool { true }
+
+    // Keep the SwiftUI content exactly the size of the window, whenever the window changes.
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        subviews.forEach { $0.frame = bounds }
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)

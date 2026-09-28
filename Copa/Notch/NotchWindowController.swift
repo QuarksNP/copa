@@ -77,6 +77,8 @@ final class NotchController {
 
     @ObservationIgnored private let panel = NotchPanel()
     @ObservationIgnored private let hoverView = HoverTrackingView()
+    /// The SwiftUI content inside `hoverView`.
+    @ObservationIgnored private var contentView: NSView!
     /// Watches for clicks outside Copa; only installed while the panel is open.
     @ObservationIgnored private var clickMonitor: Any?
     @ObservationIgnored private let app: AppModel
@@ -111,6 +113,7 @@ final class NotchController {
         hoverView.addSubview(hostingView)
         panel.contentView = hoverView
         hostingView.frame = hoverView.bounds
+        contentView = hostingView
         hoverView.onHoverChange = { [weak self] hovering in self?.hoverChanged(hovering) }
         panel.onEscape = { [weak self] in
             guard let self else { return }
@@ -142,7 +145,19 @@ final class NotchController {
             let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
             notchSize = CGSize(width: 200, height: max(menuBarHeight, 24))
         }
-        panel.setFrame(isExpanded ? expandedFrame : restingFrame, display: true)
+        setPanelFrame(isExpanded ? expandedFrame : restingFrame)
+    }
+
+    /// Resizes the notch window and makes sure its content follows right away. Relying on automatic
+    /// resizing alone could leave the open panel's content inside the small closed notch (a slice of
+    /// cards showing in the notch) when the resize happened mid-animation.
+    private func setPanelFrame(_ frame: CGRect) {
+        panel.setFrame(frame, display: false)
+        contentView.frame = hoverView.bounds
+        contentView.needsLayout = true
+        contentView.layoutSubtreeIfNeeded()
+        hoverView.needsDisplay = true
+        panel.displayIfNeeded()
     }
 
     private var collapsedFrame: CGRect {
@@ -189,7 +204,7 @@ final class NotchController {
         mouseHasEntered = false
         editingItemID = nil
         selectedItemID = nil
-        panel.setFrame(expandedFrame, display: true)
+        setPanelFrame(expandedFrame)
         panel.orderFrontRegardless()
         // Take keyboard focus (without switching apps) so the arrow keys, Delete and Return work.
         panel.makeKey()
@@ -217,9 +232,16 @@ final class NotchController {
         withAnimation(Self.closeAnimation) {
             isExpanded = false
         } completion: { [weak self] in
-            guard let self, !self.isExpanded else { return }
-            self.panel.setFrame(self.restingFrame, display: true)
+            self?.shrinkIfClosed()
         }
+        // Safety net: if the animation's completion is ever skipped, don't leave an invisible
+        // panel-sized window over the screen blocking clicks.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in self?.shrinkIfClosed() }
+    }
+
+    private func shrinkIfClosed() {
+        guard !isExpanded, panel.frame != restingFrame else { return }
+        setPanelFrame(restingFrame)
     }
 
     // MARK: Activities
@@ -245,7 +267,7 @@ final class NotchController {
     private func show(_ newActivity: Activity) {
         activityEndWork?.cancel()
         // Grow the window first; SwiftUI then animates the notch widening inside it.
-        if !isExpanded { panel.setFrame(activityFrame, display: true) }
+        if !isExpanded { setPanelFrame(activityFrame) }
         withAnimation(Self.openAnimation) { activity = newActivity }
 
         if newActivity == .savingScreenshot {
@@ -263,7 +285,7 @@ final class NotchController {
             activity = nil
         } completion: { [weak self] in
             guard let self, !self.isExpanded, self.activity == nil else { return }
-            self.panel.setFrame(self.collapsedFrame, display: true)
+            self.setPanelFrame(self.collapsedFrame)
         }
     }
 
