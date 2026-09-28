@@ -39,20 +39,26 @@ final class ClipStore {
 
     // MARK: Adding
 
-    func add(_ payload: ClipPayload, from app: NSRunningApplication?) async {
+    /// Saves a clip. The source is shown on the card: pass the app it came from,
+    /// or a name and bundle ID directly (e.g. for screenshots).
+    @discardableResult
+    func add(_ payload: ClipPayload, from app: NSRunningApplication?,
+             sourceName: String? = nil, sourceBundleID: String? = nil) async -> ClipItem? {
         let hash = await Task.detached { payload.contentHash }.value
+        let sourceName = app?.localizedName ?? sourceName
+        let sourceBundleID = app?.bundleIdentifier ?? sourceBundleID
 
         // Copied the same thing again? Move it to the front instead of storing a duplicate.
         if let existing = item(withHash: hash) {
             existing.lastUsedAt = .now
-            if let app { existing.sourceAppName = app.localizedName; existing.sourceBundleID = app.bundleIdentifier }
+            if let sourceBundleID { existing.sourceAppName = sourceName; existing.sourceBundleID = sourceBundleID }
             save()
             onSave?(existing)
-            return
+            return existing
         }
 
         let item = ClipItem(kind: payload.kind, contentHash: hash,
-                            sourceAppName: app?.localizedName, sourceBundleID: app?.bundleIdentifier)
+                            sourceAppName: sourceName, sourceBundleID: sourceBundleID)
         switch payload {
         case .text(let string):
             item.text = string
@@ -66,11 +72,11 @@ final class ClipStore {
             item.filePaths = urls.map(\.path)
         case .image(let data):
             // Encoding big screenshots takes a moment, so do it in the background.
-            guard let saved = await Task.detached(operation: { BlobStore.saveImage(data) }).value else { return }
+            guard let saved = await Task.detached(operation: { BlobStore.saveImage(data) }).value else { return nil }
             // Another copy of the same image may have finished first.
-            if self.item(withHash: hash) != nil {
+            if let existing = self.item(withHash: hash) {
                 BlobStore.delete([saved.imageFilename, saved.thumbnailFilename])
-                return
+                return existing
             }
             item.imageFilename = saved.imageFilename
             item.thumbnailFilename = saved.thumbnailFilename
@@ -82,6 +88,7 @@ final class ClipStore {
         save()
         prune()
         onSave?(item)
+        return item
     }
 
     private func item(withHash hash: String) -> ClipItem? {

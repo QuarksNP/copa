@@ -7,6 +7,7 @@ Everything you copy is saved automatically. Hover the notch and your history ope
 - **Click** a card to copy it again, then paste with ⌘V.
 - **Drag** a card into any app (Mail, Slack, Finder, Notes…).
 - **Drop** anything (files, images, text, links) onto the notch. Copa saves it and sorts it into the right tab.
+- **Screenshots** you take (⇧⌘3, ⇧⌘4, ⇧⌘5) show up in Images automatically, ready to copy again. The notch shows a spinner the moment you take one.
 - **Links** show a rich preview (page image, site icon, title).
 - **Right-click** a card to Pin, Rename, Open Link, Show in Finder, or Delete.
 - **Rename** gives a clip your own name (Return saves, Esc cancels). The name becomes the card's title and works in search. It's only a label in Copa; files on disk are not renamed.
@@ -42,6 +43,20 @@ Recent versions of macOS may ask: *"Copa would like to paste from other apps"*. 
 
 You can change this later in **System Settings › Privacy & Security › Paste from Other Apps**. Copa's Settings window shows the current status.
 
+## First screenshot: folder permission
+
+To pick up screenshots, Copa needs to read the folder they're saved in (Desktop by default). The first time Copa opens, macOS asks: *"Copa would like to access files in your Desktop folder"*. Choose **Allow**.
+
+You can change this later in **System Settings › Privacy & Security › Files & Folders**. Because Copa isn't signed with a paid Apple developer account, macOS may ask again after you reinstall or update it.
+
+The moment you take a screenshot, the notch widens with a spinner, like the Dynamic Island. When the screenshot lands in Copa it shows a small thumbnail and a checkmark. While the floating thumbnail is on screen, macOS hasn't saved the file yet, so this takes a few seconds; the spinner shows it's on its way.
+
+- **Several in a row:** each one is counted; the notch shows how many are on their way.
+- **Screen recordings (⇧⌘5):** saved to **Files** when the recording ends.
+- **Copied to the clipboard (⌃⇧⌘4):** appears in Images right away.
+- **Dragged into an app or deleted from the thumbnail:** nothing is saved, and the notch shrinks back.
+- **Editing in Markup:** the spinner stops after 15 seconds; the screenshot still arrives when you're done.
+
 ## Privacy
 
 - Everything stays on your Mac. The only network access is **link previews**: when you copy a link, Copa loads that page's title, image and icon, just like Messages does. You can turn this off in Settings to keep Copa fully offline.
@@ -51,6 +66,7 @@ You can change this later in **System Settings › Privacy & Security › Paste 
 ## Settings
 
 - Open at login
+- Save screenshots to Copa
 - Show link previews
 - Pause capturing
 - History size: 100 / 250 / 500 (default) / 1000 / everything. Pinned clips are never removed.
@@ -69,6 +85,7 @@ Copa/
 │   ├── ClipStore            Save, de-duplicate, pin, delete, trim history
 │   ├── BlobStore            Stores images and thumbnails on disk
 │   ├── LinkPreviewLoader    Fetches link title/image/icon (LinkPresentation)
+│   ├── ScreenshotWatcher    Picks up new screenshots via Spotlight
 │   └── PasteboardWriter     Copy back to clipboard, drag & drop helpers
 ├── Notch/
 │   ├── NotchPanel           The floating window over the notch

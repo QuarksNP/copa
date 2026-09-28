@@ -14,12 +14,22 @@ struct SettingsView: View {
         @Bindable var monitor = app.monitor
         @Bindable var store = app.store
         @Bindable var linkPreviews = app.linkPreviews
+        @Bindable var screenshots = app.screenshots
 
         Form {
             Section("General") {
                 Toggle("Open Copa at login", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, enabled in setLaunchAtLogin(enabled) }
                 Toggle("Pause capturing", isOn: $monitor.isPaused)
+            }
+
+            Section {
+                Toggle("Save screenshots to Copa", isOn: $screenshots.isEnabled)
+            } header: {
+                Text("Screenshots")
+            } footer: {
+                Text("Screenshots taken with ⇧⌘3, ⇧⌘4 or ⇧⌘5 appear in Images, ready to copy again. The first time, macOS asks to let Copa read the folder your screenshots are saved in.")
+                    .foregroundStyle(.secondary)
             }
 
             Section {

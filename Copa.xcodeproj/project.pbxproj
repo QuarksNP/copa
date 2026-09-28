@@ -195,6 +195,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Copa;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Copa saves the screenshots you take so you can copy them again later.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Copa saves the screenshots you take so you can copy them again later.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Copa saves the screenshots you take so you can copy them again later.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -227,6 +230,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Copa;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Copa saves the screenshots you take so you can copy them again later.";
+				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Copa saves the screenshots you take so you can copy them again later.";
+				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Copa saves the screenshots you take so you can copy them again later.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

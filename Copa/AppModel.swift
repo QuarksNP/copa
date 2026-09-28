@@ -7,9 +7,12 @@ final class AppModel {
     let store = ClipStore()
     let monitor: ClipboardMonitor
     let linkPreviews = LinkPreviewLoader()
+    let screenshots: ScreenshotWatcher
 
     init() {
         monitor = ClipboardMonitor(store: store)
+        screenshots = ScreenshotWatcher(store: store, monitor: monitor)
+        monitor.onImageCaptured = { [screenshots] item in screenshots.clipboardImageArrived(item) }
         store.onSave = { [linkPreviews] item in linkPreviews.loadIfNeeded(item) }
     }
 
@@ -35,7 +38,7 @@ final class AppModel {
     /// Saves whatever was dropped on the notch; it's sorted into the right category automatically.
     func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         PasteboardWriter.payloads(from: providers) { [store] payload in
-            Task { await store.add(payload, from: nil) }
+            Task { _ = await store.add(payload, from: nil) }
         }
         return !providers.isEmpty
     }

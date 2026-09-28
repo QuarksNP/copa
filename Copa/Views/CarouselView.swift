@@ -4,15 +4,26 @@ import SwiftUI
 struct CarouselView: View {
     let items: [ClipItem]
     @Environment(NotchController.self) private var notch
+    @Environment(AppModel.self) private var app
+
+    /// A screenshot is on its way and belongs in the current tab.
+    private var showsPendingScreenshot: Bool {
+        app.screenshots.pendingCount > 0 && notch.searchText.isEmpty && !notch.showPinnedOnly
+            && (notch.category == .all || notch.category == .kind(.image))
+    }
 
     var body: some View {
         Group {
-            if items.isEmpty {
+            if items.isEmpty && !showsPendingScreenshot {
                 emptyState
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal) {
                         LazyHStack(spacing: 10) {
+                            if showsPendingScreenshot {
+                                PendingScreenshotCard()
+                                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+                            }
                             ForEach(items) { item in
                                 ClipCard(item: item)
                                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
@@ -23,6 +34,7 @@ struct CarouselView: View {
                             }
                         }
                         .scrollTargetLayout()
+                        .animation(.snappy, value: showsPendingScreenshot)
                         .padding(.vertical, 6)
                     }
                     .scrollTargetBehavior(.viewAligned)
@@ -60,5 +72,28 @@ struct CarouselView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
+    }
+}
+
+/// Placeholder shown while macOS finishes saving a screenshot.
+private struct PendingScreenshotCard: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "camera.viewfinder")
+                .font(.system(size: 28))
+                .foregroundStyle(.tint)
+                .symbolEffect(.pulse, options: .repeating)
+            ProgressView()
+                .controlSize(.small)
+            Text("Saving screenshot…")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .frame(width: ClipCard.size.width, height: ClipCard.size.height)
+        .background(.white.opacity(0.065), in: .rect(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .strokeBorder(Color.accentColor.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+        }
     }
 }

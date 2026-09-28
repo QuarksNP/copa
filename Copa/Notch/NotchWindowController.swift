@@ -18,6 +18,8 @@ final class NotchController {
     static let expandedBottomRadius: CGFloat = 28
     /// Extra transparent room around the expanded shape so its shadow isn't clipped.
     static let shadowPadding: CGFloat = 30
+    /// How far the notch grows on each side to show an activity (like a screenshot being saved).
+    static let activityWing: CGFloat = 40
 
     static let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.78)
     static let closeAnimation = Animation.spring(response: 0.35, dampingFraction: 0.9)
@@ -58,6 +60,19 @@ final class NotchController {
         CGSize(width: notchSize.width + 2 * Self.collapsedTopRadius, height: notchSize.height)
     }
 
+    /// Something shown in the collapsed notch, Dynamic Island style.
+    enum Activity: Equatable {
+        case savingScreenshot
+        /// `symbol` is shown when there's no thumbnail (e.g. a screen recording).
+        case savedScreenshot(thumbnail: URL?, symbol: String)
+    }
+
+    private(set) var activity: Activity?
+
+    var activityShapeSize: CGSize {
+        CGSize(width: collapsedShapeSize.width + 2 * Self.activityWing, height: notchSize.height)
+    }
+
     // MARK: Private
 
     @ObservationIgnored private let panel = NotchPanel()
@@ -71,6 +86,9 @@ final class NotchController {
     @ObservationIgnored private var openedFromMenu = false
     @ObservationIgnored private var mouseHasEntered = false
     @ObservationIgnored private var isMenuOpen = false
+    @ObservationIgnored private var activityEndWork: DispatchWorkItem?
+    /// Longest the "saving" spinner stays up, e.g. while the user annotates the screenshot in Markup.
+    private static let maxSpinnerTime: TimeInterval = 15
 
     init(app: AppModel) {
         self.app = app
@@ -95,6 +113,8 @@ final class NotchController {
             if self.editingItemID != nil { self.editingItemID = nil } else { self.collapse() }
         }
 
+        app.screenshots.onEvent = { [weak self] event in self?.handleScreenshot(event) }
+
         layout()
         panel.orderFrontRegardless()
         installMonitors()
@@ -118,7 +138,7 @@ final class NotchController {
             let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
             notchSize = CGSize(width: 200, height: max(menuBarHeight, 24))
         }
-        panel.setFrame(isExpanded ? expandedFrame : collapsedFrame, display: true)
+        panel.setFrame(isExpanded ? expandedFrame : restingFrame, display: true)
     }
 
     private var collapsedFrame: CGRect {
@@ -126,6 +146,18 @@ final class NotchController {
         let size = collapsedShapeSize
         return CGRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height,
                       width: size.width, height: size.height)
+    }
+
+    private var activityFrame: CGRect {
+        guard let screen else { return .zero }
+        let size = activityShapeSize
+        return CGRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height,
+                      width: size.width, height: size.height)
+    }
+
+    /// The window size while not expanded: just the notch, or a bit wider during an activity.
+    private var restingFrame: CGRect {
+        activity == nil ? collapsedFrame : activityFrame
     }
 
     private var expandedFrame: CGRect {
@@ -180,6 +212,51 @@ final class NotchController {
             isExpanded = false
         } completion: { [weak self] in
             guard let self, !self.isExpanded else { return }
+            self.panel.setFrame(self.restingFrame, display: true)
+        }
+    }
+
+    // MARK: Activities
+
+    private func handleScreenshot(_ event: ScreenshotWatcher.Event) {
+        switch event {
+        case .started:
+            show(.savingScreenshot)
+        case .saved(let item):
+            show(.savedScreenshot(thumbnail: item.thumbnailURL, symbol: item.kind == .file ? "video.fill" : "photo"))
+            // Show the result briefly, then shrink back (or keep spinning if another one is on its way).
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                if self.app.screenshots.pendingCount > 0 { self.show(.savingScreenshot) } else { self.endActivity() }
+            }
+            activityEndWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
+        case .abandoned:
+            endActivity()
+        }
+    }
+
+    private func show(_ newActivity: Activity) {
+        activityEndWork?.cancel()
+        // Grow the window first; SwiftUI then animates the notch widening inside it.
+        if !isExpanded { panel.setFrame(activityFrame, display: true) }
+        withAnimation(Self.openAnimation) { activity = newActivity }
+
+        if newActivity == .savingScreenshot {
+            // Don't spin forever: the screenshot still shows up (with a checkmark) whenever it's saved.
+            let work = DispatchWorkItem { [weak self] in self?.endActivity() }
+            activityEndWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.maxSpinnerTime, execute: work)
+        }
+    }
+
+    private func endActivity() {
+        activityEndWork?.cancel()
+        guard activity != nil else { return }
+        withAnimation(Self.closeAnimation) {
+            activity = nil
+        } completion: { [weak self] in
+            guard let self, !self.isExpanded, self.activity == nil else { return }
             self.panel.setFrame(self.collapsedFrame, display: true)
         }
     }
@@ -302,6 +379,11 @@ final class NotchController {
                     charactersIgnoringModifiers: "", isARepeat: false, keyCode: code) else { return }
                 _ = self.handleKey(event)
             }
+        })
+        // Simulates a screenshot (object: "start", "saved" or "abandon").
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.copa.debug.screenshot"), object: nil, queue: .main) { [weak self] note in
+            let step = note.object as? String ?? ""
+            MainActor.assumeIsolated { self?.app.screenshots.debugSimulate(step) }
         })
         // Saves a picture of the notch window to the temporary folder (for checking the design).
         observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.copa.debug.snapshot"), object: nil, queue: .main) { [weak self] _ in

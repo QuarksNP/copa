@@ -9,7 +9,8 @@ struct NotchView: View {
 
     var body: some View {
         let expanded = notch.isExpanded
-        let size = expanded ? NotchController.expandedSize : notch.collapsedShapeSize
+        let size = expanded ? NotchController.expandedSize
+            : notch.activity != nil ? notch.activityShapeSize : notch.collapsedShapeSize
         let shape = NotchShape(
             topRadius: expanded ? NotchController.expandedTopRadius : NotchController.collapsedTopRadius,
             bottomRadius: expanded ? NotchController.expandedBottomRadius : NotchController.collapsedBottomRadius
@@ -18,8 +19,15 @@ struct NotchView: View {
         ZStack(alignment: .top) {
             shape
                 .fill(.black)
-                // Without a real notch, stay invisible until opened.
-                .opacity(notch.hasNotch || expanded ? 1 : 0)
+                // Without a real notch, stay invisible until opened (or showing an activity).
+                .opacity(notch.hasNotch || expanded || notch.activity != nil ? 1 : 0)
+
+            if !expanded, let activity = notch.activity {
+                ActivityView(activity: activity)
+                    .padding(.horizontal, NotchController.collapsedTopRadius + 10)
+                    .frame(height: notch.notchSize.height)
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
 
             if expanded {
                 ExpandedNotchContent()
@@ -44,6 +52,67 @@ struct NotchView: View {
         .animation(.easeOut(duration: 0.15), value: notch.isDropTargeted)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .ignoresSafeArea()
+    }
+}
+
+/// Shown on both sides of the notch while a screenshot is being saved, like the Dynamic Island.
+private struct ActivityView: View {
+    let activity: NotchController.Activity
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        HStack {
+            // Left: what's happening.
+            Group {
+                switch activity {
+                case .savingScreenshot:
+                    Image(systemName: "camera.viewfinder")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.white)
+                        .symbolEffect(.pulse, options: .repeating)
+                case .savedScreenshot(let url, let symbol):
+                    if let url, let image = ImageCache.shared.image(at: url) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 26, height: 18)
+                            .clipShape(.rect(cornerRadius: 4))
+                    } else {
+                        Image(systemName: symbol)
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            .transition(.scale.combined(with: .opacity))
+
+            Spacer(minLength: 0)
+
+            // Right: progress, then a checkmark.
+            Group {
+                switch activity {
+                case .savingScreenshot:
+                    HStack(spacing: 5) {
+                        // Several screenshots on their way: show how many.
+                        if app.screenshots.pendingCount > 1 {
+                            Text(app.screenshots.pendingCount, format: .number)
+                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                .foregroundStyle(.white)
+                                .contentTransition(.numericText())
+                        }
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    }
+                    .animation(.snappy, value: app.screenshots.pendingCount)
+                case .savedScreenshot:
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.tint)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: activity)
     }
 }
 

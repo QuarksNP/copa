@@ -12,6 +12,8 @@ final class ClipboardMonitor {
     private let pasteboard = NSPasteboard.general
     private var lastChangeCount: Int
     @ObservationIgnored private var timer: Timer?
+    /// Called when an image is copied (used to recognize screenshots copied to the clipboard).
+    @ObservationIgnored var onImageCaptured: ((ClipItem) -> Void)?
 
     var isPaused: Bool = UserDefaults.standard.bool(forKey: ClipboardMonitor.pausedKey) {
         didSet { UserDefaults.standard.set(isPaused, forKey: Self.pausedKey) }
@@ -50,6 +52,10 @@ final class ClipboardMonitor {
               let payload = ClipClassifier.payload(from: pasteboard) else { return }
 
         let sourceApp = NSWorkspace.shared.frontmostApplication
-        Task { await store.add(payload, from: sourceApp) }
+        Task {
+            if let item = await store.add(payload, from: sourceApp), item.kind == .image {
+                onImageCaptured?(item)
+            }
+        }
     }
 }

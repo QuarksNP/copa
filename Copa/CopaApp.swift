@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         app.monitor.start()
+        app.screenshots.start()
         notch = NotchController(app: app)
     }
 }

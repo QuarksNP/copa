@@ -44,6 +44,8 @@ xcodebuild -project Copa.xcodeproj -scheme Copa -configuration Release \
 
 echo "› Installing to /Applications…"
 pkill -x Copa 2>/dev/null || true
+# Wait for the old copy to quit, or relaunching can fail.
+for _ in {1..25}; do pgrep -x Copa >/dev/null || break; sleep 0.2; done
 rm -rf /Applications/Copa.app
 cp -R "$BUILT_APP" /Applications/
 
