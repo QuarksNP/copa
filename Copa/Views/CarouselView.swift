@@ -42,7 +42,8 @@ struct CarouselView: View {
                     .contentMargins(.horizontal, 4, for: .scrollContent)
                     // Keep the card chosen with the arrow keys in view.
                     .onChange(of: notch.selection) { _, id in
-                        guard let id else { return }
+                        // Only while open: scrolling during the close animation leaves content behind.
+                        guard let id, notch.isExpanded else { return }
                         withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(id) }
                     }
                 }

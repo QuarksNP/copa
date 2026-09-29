@@ -4,7 +4,11 @@ A notch clipboard history for macOS (SwiftUI + AppKit + SwiftData, macOS 26). Se
 
 - Build (Debug): `xcodebuild -project Copa.xcodeproj -scheme Copa -configuration Debug -derivedDataPath ~/Library/Caches/Copa/DerivedData.noindex build`
 - Install (Release, to /Applications): `./scripts/install.sh`
-- Debug builds listen for `com.copa.debug.*` distributed notifications (toggle, snapshot, category, rename, key, screenshot) to drive the UI from Terminal; see `NotchWindowController.installMonitors`.
+- Debug builds listen for `com.copa.debug.*` distributed notifications (toggle, snapshot, views, category, rename, key, copy, screenshot) to drive the UI from Terminal; see `NotchWindowController.installMonitors`.
+
+## Notch panel rule
+
+Never change what the open panel shows (search text, selection, clip order, scroll position) while it's animating closed. The carousel is an AppKit scroll view; if it scrolls mid-close, SwiftUI leaves the panel's content stuck inside the closed notch. Do resets after the close finishes (`NotchController.resetAfterClosing`).
 
 ## Performance is a rule
 

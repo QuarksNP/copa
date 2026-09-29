@@ -222,8 +222,6 @@ final class NotchController {
         stopTracking()
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
-        searchText = ""
-        app.panelDidClose()
         if panel.isKeyWindow {
             // Hand keyboard focus back to the app the user was working in.
             panel.orderOut(nil)
@@ -240,8 +238,19 @@ final class NotchController {
     }
 
     private func shrinkIfClosed() {
-        guard !isExpanded, panel.frame != restingFrame else { return }
+        guard !isExpanded else { return }
+        resetAfterClosing()
+        guard panel.frame != restingFrame else { return }
         setPanelFrame(restingFrame)
+    }
+
+    /// Clears the search and moves reused clips to the front, only once the panel is fully closed.
+    /// Doing it while the close animation runs made the carousel scroll mid-animation, which left
+    /// the open panel's content stuck inside the closed notch.
+    private func resetAfterClosing() {
+        if !searchText.isEmpty { searchText = "" }
+        selectedItemID = nil
+        app.panelDidClose()
     }
 
     // MARK: Activities
@@ -383,6 +392,27 @@ final class NotchController {
             }
         })
         // Simulates a key press (object: key code, e.g. "124" for →) through the real key handler.
+        // Writes the window's view tree (class, frame, hidden) to the temporary folder.
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.copa.debug.views"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                var lines = ["window \(self.panel.frame) expanded=\(self.isExpanded)"]
+                func walk(_ view: NSView, _ depth: Int) {
+                    guard depth < 14 else { return }
+                    lines.append(String(repeating: "  ", count: depth) + "\(type(of: view)) \(view.frame) hidden=\(view.isHidden) alpha=\(view.alphaValue)")
+                    view.subviews.forEach { walk($0, depth + 1) }
+                }
+                walk(self.hoverView, 0)
+                try? lines.joined(separator: "\n").write(to: FileManager.default.temporaryDirectory.appending(path: "copa-views.txt"), atomically: true, encoding: .utf8)
+            }
+        })
+        // Copies the selected card like a click does (without closing the panel).
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.copa.debug.copy"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let id = self.selection, let item = self.clip(withID: id) else { return }
+                self.app.copy(item)
+            }
+        })
         observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.copa.debug.key"), object: nil, queue: .main) { [weak self] note in
             let code = UInt16(note.object as? String ?? "") ?? 0
             MainActor.assumeIsolated {
