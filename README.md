@@ -65,9 +65,10 @@ The moment you take a screenshot, the notch widens with a spinner, like the Dyna
 
 ## Privacy
 
-- Everything stays on your Mac. The only network access is **link previews**: when you copy a link, Copa loads that page's title, image and icon, just like Messages does. You can turn this off in Settings to keep Copa fully offline.
-- Items marked as passwords by password managers (1Password, Bitwarden, Keychain…) are never saved.
-- Data lives in `~/Library/Application Support/Copa/`: a database plus an `Images` folder. Delete that folder to erase everything.
+- Your history stays on your Mac. The only network access is **link previews**: when you copy a link, Copa loads that page's title, image and icon, just like Messages does. You can turn this off in Settings to keep Copa fully offline.
+- Link previews skip anything a visit could affect: addresses on your Mac or local network (`localhost`, `192.168.x.x`, intranet names, or public names that point to them), links that look single-use or secret (sign-in, password reset, verification, invitations, unsubscribe, or a token in the address) and links with a user name or password in them. These show just the address.
+- Passwords are never saved: Copa skips items that password managers mark as passwords, and anything copied while a password manager (1Password, Bitwarden, Apple Passwords, Keychain Access, KeePassXC…) is in front. Browser extensions of password managers don't always mark what they copy, so prefer their desktop app or autofill.
+- Data lives in `~/Library/Application Support/Copa/` (readable only by your user): a database plus an `Images` folder. Delete that folder to erase everything.
 
 ## Settings
 

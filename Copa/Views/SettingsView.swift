@@ -37,7 +37,7 @@ struct SettingsView: View {
             } header: {
                 Text("Links")
             } footer: {
-                Text("Loads each link's title, image and icon from the website, like Messages does. Turn off to keep Copa fully offline.")
+                Text("Loads each link's title, image and icon from the website, like Messages does. Local network, sign-in and other single-use links are never loaded. Turn off to keep Copa fully offline.")
                     .foregroundStyle(.secondary)
             }
 

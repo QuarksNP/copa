@@ -47,11 +47,11 @@ final class ClipboardMonitor {
         guard changeCount != lastChangeCount else { return }
         lastChangeCount = changeCount
 
+        let sourceApp = NSWorkspace.shared.frontmostApplication
         guard !isPaused,
-              !ClipClassifier.shouldIgnore(pasteboard),
+              !ClipClassifier.shouldIgnore(pasteboard, from: sourceApp),
               let payload = ClipClassifier.payload(from: pasteboard) else { return }
 
-        let sourceApp = NSWorkspace.shared.frontmostApplication
         Task {
             if let item = await store.add(payload, from: sourceApp), item.kind == .image {
                 onImageCaptured?(item)

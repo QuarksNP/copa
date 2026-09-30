@@ -15,6 +15,8 @@ enum BlobStore {
     nonisolated static let rootDirectory: URL = {
         let url = URL.applicationSupportDirectory.appending(path: "Copa", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        // The history is private: only this user may open the folder, even if ~/Library is shared.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
         return url
     }()
 

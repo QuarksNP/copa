@@ -26,13 +26,25 @@ final class LinkPreviewLoader {
     func isLoading(_ item: ClipItem) -> Bool { loadingIDs.contains(item.id) }
 
     /// Fetches the preview once per link. Safe to call repeatedly.
+    /// Links that `LinkPreviewPolicy` rules out are never visited; their card shows the address only.
     func loadIfNeeded(_ item: ClipItem) {
         guard isEnabled, item.kind == .link, !item.linkPreviewFetched,
               !loadingIDs.contains(item.id), let url = item.url else { return }
+        guard LinkPreviewPolicy.allowsPreview(of: url) else {
+            skipPreview(for: item)
+            return
+        }
         loadingIDs.insert(item.id)
 
         Task {
             defer { loadingIDs.remove(item.id) }
+
+            // Public names can still point to this Mac or the local network.
+            switch await LinkPreviewPolicy.resolvesToPublicAddresses(url) {
+            case true?: break
+            case false?: skipPreview(for: item); return
+            case nil: return  // Offline; try again next time the card appears.
+            }
 
             let provider = LPMetadataProvider()
             provider.timeout = 12
@@ -64,6 +76,13 @@ final class LinkPreviewLoader {
             item.linkPreviewFetched = true
             try? item.modelContext?.save()
         }
+    }
+
+    /// Remembers that this link gets no preview, so it isn't checked again.
+    private func skipPreview(for item: ClipItem) {
+        guard item.modelContext != nil else { return }
+        item.linkPreviewFetched = true
+        try? item.modelContext?.save()
     }
 
     private static func imageData(from provider: NSItemProvider?) async -> Data? {

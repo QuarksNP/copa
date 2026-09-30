@@ -226,7 +226,7 @@ struct ClipCard: View {
                 withAnimation(.snappy) { app.store.rename(item, to: "") }
             }
         }
-        if item.kind == .link, let url = item.url {
+        if item.kind == .link, let url = item.url, ["http", "https", "ftp"].contains(url.scheme?.lowercased() ?? "") {
             Button("Open Link", systemImage: "safari") { NSWorkspace.shared.open(url) }
         }
         if item.kind == .file || item.kind == .image {

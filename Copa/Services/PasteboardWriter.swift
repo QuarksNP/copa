@@ -90,7 +90,8 @@ enum PasteboardWriter {
             } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     guard let url else { return }
-                    Task { @MainActor in completion(.link(url, original: url.absoluteString)) }
+                    // Same rules as copied text: only web addresses become links.
+                    Task { @MainActor in completion(ClipClassifier.payload(fromString: url.absoluteString)) }
                 }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
                 _ = provider.loadObject(ofClass: String.self) { string, _ in
