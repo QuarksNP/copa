@@ -67,7 +67,7 @@ final class NotchController {
         case savedScreenshot(thumbnail: URL?, symbol: String)
     }
 
-    private(set) var activity: Activity?
+    private(set) var activity: Activity? { didSet { updateHoverArea() } }
 
     var activityShapeSize: CGSize {
         CGSize(width: collapsedShapeSize.width + 2 * Self.activityWing, height: notchSize.height)
@@ -94,6 +94,9 @@ final class NotchController {
     @ObservationIgnored private var activityEndWork: DispatchWorkItem?
     /// Longest the "saving" spinner stays up, e.g. while the user annotates the screenshot in Markup.
     private static let maxSpinnerTime: TimeInterval = 15
+    /// How long the cursor must stay outside the open panel before it closes. Short, so what's under
+    /// the panel (like the menu bar) is usable right after leaving; long enough to forgive overshooting an edge.
+    private static let closeDelay: TimeInterval = 0.1
 
     init(app: AppModel) {
         self.app = app
@@ -156,8 +159,17 @@ final class NotchController {
         contentView.frame = hoverView.bounds
         contentView.needsLayout = true
         contentView.layoutSubtreeIfNeeded()
+        // AppKit refreshes tracking areas only some time after a resize; do it now.
+        updateHoverArea()
         hoverView.needsDisplay = true
         panel.displayIfNeeded()
+    }
+
+    /// Only the closed notch (wider during an activity) counts as hovering, even while the window is
+    /// panel-sized. Otherwise, heading for the menu bar under a closing panel would open it again.
+    private func updateHoverArea() {
+        hoverView.hoverSize = activity == nil ? collapsedShapeSize : activityShapeSize
+        hoverView.updateTrackingAreas()
     }
 
     private var collapsedFrame: CGRect {
@@ -497,6 +509,6 @@ final class NotchController {
         }
         let since = outsideSince ?? .now
         outsideSince = since
-        if Date.now.timeIntervalSince(since) > 0.3 { collapse() }
+        if Date.now.timeIntervalSince(since) >= Self.closeDelay { collapse() }
     }
 }

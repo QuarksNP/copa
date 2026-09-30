@@ -46,6 +46,8 @@ final class NotchHostingView<Content: View>: NSHostingView<Content> {
 final class HoverTrackingView: NSView {
     var onHoverChange: ((Bool) -> Void)?
     private(set) var isHovered = false
+    /// Size of the area at the top center that counts as the notch. Call `updateTrackingAreas()` after changing it.
+    var hoverSize: CGSize = .zero
 
     // Anchor content at the top, like the notch itself: if it's ever briefly the wrong size,
     // the notch shows the panel's black top edge rather than a slice from the bottom.
@@ -59,9 +61,12 @@ final class HoverTrackingView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
+        let area = NSRect(x: (bounds.width - hoverSize.width) / 2, y: 0, width: hoverSize.width, height: hoverSize.height)
         // .activeAlways: Copa never becomes the active app, but should still notice the cursor.
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+        addTrackingArea(NSTrackingArea(rect: area, options: [.mouseEnteredAndExited, .activeAlways],
                                        owner: self, userInfo: nil))
+        // A new area doesn't report a cursor that's already inside it (or just left), so catch up here.
+        if let window { isHovered = area.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) }
     }
 
     override func mouseEntered(with event: NSEvent) {
