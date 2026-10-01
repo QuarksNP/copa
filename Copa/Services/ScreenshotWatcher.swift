@@ -15,11 +15,16 @@ import UniformTypeIdentifiers
 /// - Screen recordings (not treated as a pending screenshot; the video is saved to Files).
 /// - Thumbnail dragged into an app or deleted (the feedback ends after a few seconds).
 /// - Screenshots copied to the clipboard instead of saved (resolved when the image arrives there).
+/// - Apps sharing the screen (Discord, Zoom…) keep the tool open for as long as they share, and
+///   screenshots taken then show no indicator: those are still saved, just without the spinner.
+/// - Microphone, camera and screen-sharing dots, which look like capture indicators but stay up.
 /// - Any save folder and any display.
 @Observable
 final class ScreenshotWatcher {
     static let enabledKey = "saveScreenshots"
     private static let screenshotAppID = "com.apple.screencaptureui"
+    /// How long to watch for screenshots after the tool starts or after the last one.
+    private static let watchTime: TimeInterval = 15
 
     enum Event {
         /// A screenshot was just taken; macOS hasn't saved the file yet.
@@ -36,9 +41,13 @@ final class ScreenshotWatcher {
 
     @ObservationIgnored private var captureTimer: Timer?
     @ObservationIgnored private var runningAppsObservation: NSKeyValueObservation?
-    /// Capture indicators seen, with when they appeared. Recordings keep theirs on screen.
+    @ObservationIgnored private var isToolRunning = false
+    @ObservationIgnored private var toolStartedAt = Date.distantPast
+    /// Capture indicators seen, with when they appeared.
     @ObservationIgnored private var indicatorsSeenAt: [Int: Date] = [:]
-    @ObservationIgnored private var recordingIndicators: Set<Int> = []
+    /// Indicators that stayed up: microphone, camera, screen sharing or a recording. Never a
+    /// screenshot, so they're remembered and ignored from then on.
+    @ObservationIgnored private var lastingIndicators: Set<Int> = []
     @ObservationIgnored private var lastToolSeen = Date.distantPast
     @ObservationIgnored private var lastCaptureSignal = Date.distantPast
 
@@ -93,9 +102,11 @@ final class ScreenshotWatcher {
         query.start()
         self.query = query
 
-        // Only watch closely while the screenshot tool is open (it starts with each screenshot).
+        // Only watch closely right after the screenshot tool starts (it starts with each screenshot).
         // The rest of the time Copa does nothing until macOS says an app started or quit.
-        runningAppsObservation = NSWorkspace.shared.observe(\.runningApplications, options: [.initial]) { [weak self] _, _ in
+        // A tool already open at launch belongs to an earlier screenshot or a screen-sharing app.
+        isToolRunning = isScreenshotToolRunning
+        runningAppsObservation = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, _ in
             DispatchQueue.main.async { self?.screenshotToolMayHaveChanged() }
         }
     }
@@ -105,31 +116,42 @@ final class ScreenshotWatcher {
     }
 
     private func screenshotToolMayHaveChanged() {
-        if isScreenshotToolRunning {
-            guard captureTimer == nil else { return }
-            let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.checkForNewCapture() }
-            }
-            timer.tolerance = 0.1
-            RunLoop.main.add(timer, forMode: .common)
-            captureTimer = timer
-            checkForNewCapture()
-        } else if let timer = captureTimer {
-            timer.invalidate()
-            captureTimer = nil
+        let wasRunning = isToolRunning
+        isToolRunning = isScreenshotToolRunning
+        if isToolRunning, !wasRunning {
+            toolStartedAt = .now
+            startWatching()
+        } else if !isToolRunning, wasRunning {
+            stopWatching()
             checkForNewCapture()
             // If nothing arrives shortly after the tool quits, the screenshot isn't coming.
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { [weak self] in self?.giveUpIfNothingArrived() }
         }
     }
 
-    func stop() {
-        runningAppsObservation = nil
+    private func startWatching() {
+        guard captureTimer == nil else { return }
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkForNewCapture() }
+        }
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        captureTimer = timer
+        checkForNewCapture()
+    }
+
+    private func stopWatching() {
         captureTimer?.invalidate()
         captureTimer = nil
-        pendingCount = 0
         indicatorsSeenAt.removeAll()
-        recordingIndicators.removeAll()
+    }
+
+    func stop() {
+        runningAppsObservation = nil
+        stopWatching()
+        isToolRunning = false
+        pendingCount = 0
+        lastingIndicators.removeAll()
         query?.stop()
         query = nil
         observers.forEach(NotificationCenter.default.removeObserver)
@@ -214,32 +236,43 @@ final class ScreenshotWatcher {
     /// before the screenshot tool (screencaptureui) starts, and keeps it for ~3 s. A new indicator
     /// means "a screenshot was just taken". The tool stays open ~11 s after each screenshot.
     ///
-    /// Checked four times a second, but only while the tool is running: when you're not taking
-    /// screenshots, this costs nothing.
+    /// Checked four times a second, but only for a few seconds after the tool starts or a screenshot
+    /// is taken: when you're not taking screenshots, this costs nothing.
     private func checkForNewCapture() {
         guard !monitor.isPaused else { return }
         guard isScreenshotToolRunning else {
             indicatorsSeenAt.removeAll()
-            recordingIndicators.removeAll()
             giveUpIfNothingArrived()
             return
         }
         lastToolSeen = .now
 
         let indicators = Self.captureIndicators()
-        for number in indicators where indicatorsSeenAt[number] == nil {
+        for number in indicators where indicatorsSeenAt[number] == nil && !lastingIndicators.contains(number) {
             indicatorsSeenAt[number] = .now
             registerCapture()
         }
-        // An indicator that stays up is a screen recording, not a screenshot: stop waiting for it.
-        // (The video is saved to Files when the recording ends.)
-        for number in indicators where !recordingIndicators.contains(number) {
+        // An indicator that stays up is a microphone/camera dot or a screen recording, not a
+        // screenshot: stop waiting for it. (A recording's video is saved to Files when it ends.)
+        for number in indicators where !lastingIndicators.contains(number) {
             guard let seenAt = indicatorsSeenAt[number], Date.now.timeIntervalSince(seenAt) > 5 else { continue }
-            recordingIndicators.insert(number)
+            lastingIndicators.insert(number)
             pendingCount = max(pendingCount - 1, 0)
             if pendingCount == 0 { onEvent?(.abandoned) }
         }
         indicatorsSeenAt = indicatorsSeenAt.filter { indicators.contains($0.key) || Date.now.timeIntervalSince($0.value) < 30 }
+        if lastingIndicators.count > 32 { lastingIndicators.formIntersection(indicators) }
+
+        // The tool quits ~11 s after the last screenshot, but screen-sharing apps keep it open for
+        // as long as they share. Stop watching once screenshots stop; anything still on its way
+        // arrives through Spotlight (with its checkmark) all the same.
+        if Date.now.timeIntervalSince(max(toolStartedAt, lastCaptureSignal)) > Self.watchTime {
+            stopWatching()
+            if pendingCount > 0 {
+                pendingCount = 0
+                onEvent?(.abandoned)
+            }
+        }
     }
 
     private func registerCapture() {
