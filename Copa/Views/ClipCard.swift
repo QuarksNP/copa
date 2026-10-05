@@ -6,12 +6,18 @@ struct ClipCard: View {
     static let size = CGSize(width: 156, height: 172)
 
     let item: ClipItem
+    /// Every section and folder, so the card's menu can offer each one as a destination.
+    let sections: [ClipSection]
+    let folders: [ClipFolder]
+    /// The folder this clip is filed in, when the list mixes several places (search, pinned only).
+    let folderName: String?
+
     @Environment(AppModel.self) private var app
     @Environment(NotchController.self) private var notch
     @State private var isHovered = false
     @State private var showCopied = false
 
-    private var isSelected: Bool { notch.selection == item.id }
+    private var isSelected: Bool { notch.selection == .clip(item.id) }
 
     var body: some View {
         // A deleted clip can be drawn once more during its removal animation, when its data is
@@ -27,8 +33,10 @@ struct ClipCard: View {
         VStack(alignment: .leading, spacing: 8) {
             preview
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            if notch.editingItemID == item.id {
-                NameEditor(item: item)
+            if notch.editing == .clip(item.id) {
+                NameEditor(target: .clip(item.id), name: item.displayName) { name in
+                    app.store.rename(item, to: name)
+                }
             } else {
                 footer
             }
@@ -51,6 +59,9 @@ struct ClipCard: View {
         .onTapGesture(perform: copy)
         .onDrag {
             notch.isDraggingFromCard = true
+            // Remembered so dropping the card on a folder files this clip, instead of saving
+            // a second copy of whatever it holds.
+            notch.dragging = .clip(item.id)
             return PasteboardWriter.itemProvider(for: item)
         }
         .contextMenu { contextMenu }
@@ -168,6 +179,13 @@ struct ClipCard: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 0)
+            if let folderName {
+                Label(folderName, systemImage: "folder.fill")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tint)
+                    .help("In \(folderName)")
+            }
             if item.isPinned {
                 Image(systemName: "pin.fill")
                     .font(.system(size: 10))
@@ -203,7 +221,7 @@ struct ClipCard: View {
     // MARK: Actions
 
     private func copy() {
-        notch.selectedItemID = item.id
+        notch.selectedEntry = .clip(item.id)
         app.copy(item)
         withAnimation(.spring(response: 0.3)) { showCopied = true }
         Task {
@@ -219,12 +237,19 @@ struct ClipCard: View {
             withAnimation(.snappy) { app.store.togglePin(item) }
         }
         Button("Rename…", systemImage: "pencil") {
-            notch.editingItemID = item.id
+            notch.editing = .clip(item.id)
         }
         if item.customName != nil {
             Button("Reset Name", systemImage: "arrow.uturn.backward") {
                 withAnimation(.snappy) { app.store.rename(item, to: "") }
             }
+        }
+        MoveToMenu(item: item, sections: sections, folders: folders)
+        Button("New Folder with This Clip", systemImage: "folder.badge.plus") {
+            let folder = app.store.addFolder(name: "New Folder", in: notch.category.sectionID,
+                                             parentID: notch.currentFolderID)
+            withAnimation(.snappy) { app.store.file(item, inFolder: folder.id, section: folder.sectionID) }
+            notch.editing = .folder(folder.id)
         }
         if item.kind == .link, let url = item.url, ["http", "https", "ftp"].contains(url.scheme?.lowercased() ?? "") {
             Button("Open Link", systemImage: "safari") { NSWorkspace.shared.open(url) }
@@ -239,49 +264,6 @@ struct ClipCard: View {
         Button("Delete", systemImage: "trash", role: .destructive) {
             withAnimation(.snappy) { app.store.delete(item) }
         }
-    }
-}
-
-/// Inline text field shown in place of the card footer while renaming.
-/// Return saves, Esc cancels, clicking elsewhere saves.
-private struct NameEditor: View {
-    let item: ClipItem
-    @Environment(AppModel.self) private var app
-    @Environment(NotchController.self) private var notch
-    @State private var draft: String
-    @FocusState private var focused: Bool
-
-    init(item: ClipItem) {
-        self.item = item
-        _draft = State(initialValue: item.displayName)
-    }
-
-    var body: some View {
-        TextField("Name", text: $draft)
-            .textFieldStyle(.plain)
-            .font(.system(size: 11, weight: .medium))
-            .focused($focused)
-            .padding(.horizontal, 6)
-            .frame(height: 20)
-            .background(.white.opacity(0.1), in: .rect(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor, lineWidth: 1))
-            .onSubmit { finish(save: true) }
-            .onExitCommand { finish(save: false) }
-            .onChange(of: focused) { _, isFocused in
-                if !isFocused { finish(save: true) }
-            }
-            .onAppear {
-                notch.focusPanel()
-                // Focus on the next run loop, once the panel has become key.
-                DispatchQueue.main.async { focused = true }
-            }
-            .onDisappear { finish(save: true) }
-    }
-
-    private func finish(save: Bool) {
-        guard notch.editingItemID == item.id else { return }
-        if save { app.store.rename(item, to: draft) }
-        notch.editingItemID = nil
     }
 }
 

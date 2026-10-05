@@ -4,11 +4,36 @@ A notch clipboard history for macOS (SwiftUI + AppKit + SwiftData, macOS 26). Se
 
 - Build (Debug): `xcodebuild -project Copa.xcodeproj -scheme Copa -configuration Debug -derivedDataPath ~/Library/Caches/Copa/DerivedData.noindex build`
 - Install (Release, to /Applications): `./scripts/install.sh`
-- Debug builds listen for `com.copa.debug.*` distributed notifications (toggle, snapshot, views, category, rename, key, copy, screenshot) to drive the UI from Terminal; see `NotchWindowController.installMonitors`.
+- Debug builds listen for `com.copa.debug.*` distributed notifications (toggle, hold, snapshot, views, category, search, rename, key, copy, screenshot, newfolder, openfolder, delfolder, delfolderall, file, drop, newsection, delsection, delsectionall) to drive the UI from Terminal; see `NotchWindowController.installMonitors`. `hold` keeps the panel open while you script it, `views` dumps the tab, path, selection, folders and sections, and `drop` runs a drag and drop without a mouse (posting real mouse events needs Accessibility, which a terminal usually doesn't have).
 
 ## Notch panel rule
 
 Never change what the open panel shows (search text, selection, clip order, scroll position) while it's animating closed. The carousel is an AppKit scroll view; if it scrolls mid-close, SwiftUI leaves the panel's content stuck inside the closed notch. Do resets after the close finishes (`NotchController.resetAfterClosing`).
+
+## Folders and sections
+
+A clip lives in exactly one place: loose in the built-in history, in a section the user made, or in
+one folder (which belongs to a section, or to the built-in history). `ClipItem.sectionID` /
+`folderID` say where, and `isFiled` mirrors them so trimming the history can filter on a plain Bool.
+Moving a clip always goes through `ClipStore.file(_:inFolder:section:)`, which keeps the three in step.
+
+Folders are linked by plain ids (`parentID`, `sectionID`), not SwiftData relationships: the carousel
+filters every clip on each redraw, and reading an id costs nothing while following a relationship
+would fault whole objects in.
+
+- **Folders remember what they hold.** `kindsMask` (which kinds are anywhere inside) and `itemCount`
+  are kept up to date by `ClipStore+Filing`, so a tab can decide whether to show a folder without
+  walking it. Any change to where something is filed must end in `refreshStats(from:)` — or
+  `refreshAllStats()` when several branches move at once.
+- **Views never walk a folder.** Read `kindsMask` / `itemCount`; never count a folder's contents
+  while drawing.
+- **Folder cards survive deletion** for the same reason clip cards do: check `isDeleted` /
+  `modelContext` before reading one.
+- **Dropping goes through one path.** `ClipFolder.canDrop` decides whether a card may land
+  somewhere and `AppModel.acceptDrop` does it, for both the folder cards and the path bar. Add a
+  new drop target by calling those two, not by rewriting the rules.
+- **Deleting is never silent.** A folder or section with something in it offers both outcomes
+  ("…, Keep Clips" and "… & Contents"); the Delete key only removes an empty folder.
 
 ## Performance is a rule
 

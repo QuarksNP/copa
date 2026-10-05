@@ -46,7 +46,10 @@ struct NotchView: View {
         .shadow(color: .black.opacity(expanded ? 0.55 : 0), radius: 18, y: 8)
         .onDrop(of: PasteboardWriter.acceptedDropTypes, isTargeted: Bindable(notch).isDropTargeted) { providers in
             guard !notch.isDraggingFromCard else { return false }
-            return app.handleDrop(providers)
+            // Dropping while a section or folder is open puts it there, which is where the
+            // user is looking. On the closed notch it goes to the history, as it always has.
+            guard expanded else { return app.handleDrop(providers) }
+            return app.handleDrop(providers, inFolder: notch.currentFolderID, section: notch.category.sectionID)
         }
         .animation(.easeOut(duration: 0.15), value: notch.isDropTargeted)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -115,16 +118,56 @@ private struct ActivityView: View {
     }
 }
 
-/// Header + category tabs + carousel.
+/// Header + category tabs + the path you're in + carousel.
 private struct ExpandedNotchContent: View {
     @Environment(NotchController.self) private var notch
     @Environment(AppModel.self) private var app
     @Query(sort: \ClipItem.lastUsedAt, order: .reverse) private var allItems: [ClipItem]
+    @Query(sort: \ClipFolder.createdAt) private var allFolders: [ClipFolder]
+    @Query(sort: [SortDescriptor(\ClipSection.sortIndex), SortDescriptor(\ClipSection.createdAt)])
+    private var sections: [ClipSection]
+
+    /// Where the carousel is looking: the tab's section, and the folder opened inside it.
+    private var sectionID: UUID? { notch.category.sectionID }
+    private var folderID: UUID? { notch.currentFolderID }
+
+    private var query: String { notch.searchText.trimmingCharacters(in: .whitespaces) }
+
+    /// Searching, or asking for pinned clips, looks through everything below here rather than
+    /// just this level — otherwise a clip you filed away would be impossible to find.
+    private var isFlattened: Bool { !query.isEmpty || notch.showPinnedOnly }
+
+    /// This folder and every folder inside it; at the top of a tab, the whole section.
+    private var scope: Set<UUID> {
+        ClipFolder.subtree(of: folderID, in: sectionID, among: allFolders)
+    }
+
+    private var visibleFolders: [ClipFolder] {
+        // Pinning is about clips, so the pinned filter leaves folders out entirely.
+        guard !notch.showPinnedOnly else { return [] }
+        guard !query.isEmpty else {
+            return allFolders.filter {
+                $0.sectionID == sectionID && $0.parentID == folderID && notch.category.shows($0)
+            }
+        }
+        let scope = scope
+        return allFolders.filter {
+            $0.sectionID == sectionID && $0.id != folderID && scope.contains($0.id)
+                && notch.category.shows($0) && $0.name.localizedCaseInsensitiveContains(query)
+        }
+    }
 
     private var visibleItems: [ClipItem] {
-        let query = notch.searchText.trimmingCharacters(in: .whitespaces)
+        let query = query
+        let flattened = isFlattened
+        let scope = flattened ? scope : []
         let filtered = allItems.filter { item in
-            notch.category.contains(item)
+            guard item.sectionID == sectionID, notch.category.shows(item) else { return false }
+            // A loose clip belongs to the top level of its section, not inside any folder.
+            let here = flattened
+                ? (item.folderID.map(scope.contains) ?? (folderID == nil))
+                : item.folderID == folderID
+            return here
                 && (!notch.showPinnedOnly || item.isPinned)
                 && (query.isEmpty || item.searchableText.localizedCaseInsensitiveContains(query))
         }
@@ -132,24 +175,55 @@ private struct ExpandedNotchContent: View {
         return filtered.filter(\.isPinned) + filtered.filter { !$0.isPinned }
     }
 
+    /// How many clips each tab holds, folders included.
     private var counts: [ClipCategory: Int] {
-        var counts: [ClipCategory: Int] = [.all: allItems.count]
-        for item in allItems { counts[.kind(item.kind), default: 0] += 1 }
+        var counts: [ClipCategory: Int] = [:]
+        for item in allItems {
+            if let id = item.sectionID {
+                counts[.section(id), default: 0] += 1
+            } else {
+                counts[.all, default: 0] += 1
+                counts[.kind(item.kind), default: 0] += 1
+            }
+        }
         return counts
+    }
+
+    /// The folders we're inside, outermost first.
+    private var trail: [ClipFolder] {
+        let byID = Dictionary(allFolders.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return notch.folderPath.compactMap { byID[$0] }
+    }
+
+    private var currentSection: ClipSection? {
+        sectionID.flatMap { id in sections.first { $0.id == id } }
     }
 
     var body: some View {
         VStack(spacing: 10) {
             header
             HStack(spacing: 10) {
-                CategoryBar(counts: counts)
-                Spacer(minLength: 8)
+                CategoryBar(sections: sections, counts: counts)
+                NewSectionButton()
                 PinFilterButton()
                 SearchField()
             }
-            CarouselView(items: visibleItems)
+            PathBar(rootTitle: currentSection?.name ?? notch.category.title,
+                    rootSymbol: currentSection?.symbol ?? notch.category.symbol,
+                    sectionID: sectionID,
+                    trail: trail,
+                    folders: allFolders)
+            CarouselView(folders: visibleFolders, items: visibleItems, allFolders: allFolders,
+                         sections: sections, showsFolderChips: isFlattened)
         }
         .padding(.bottom, 12)
+        // A folder or section can be deleted while we're looking inside it.
+        .onChange(of: allFolders.map(\.id)) { _, ids in
+            notch.trimPath(toExisting: Set(ids))
+        }
+        .onChange(of: sections.map(\.id)) { _, ids in
+            if let sectionID, !ids.contains(sectionID) { notch.category = .all }
+        }
     }
 
     /// Sits on either side of the physical notch.

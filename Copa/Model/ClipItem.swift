@@ -32,6 +32,14 @@ final class ClipItem {
     /// A name the user gave this clip in Copa (nil = use the automatic name).
     var customName: String? = nil
 
+    /// Where the clip is filed. Both nil = loose in the built-in history, which is what the
+    /// built-in tabs show. A filed clip lives in exactly one place and leaves the list it came from.
+    var sectionID: UUID? = nil
+    var folderID: UUID? = nil
+    /// `sectionID` or `folderID` is set. Kept alongside them because trimming the history asks this
+    /// of every clip, and a plain Bool is something the database can filter on.
+    var isFiled: Bool = false
+
     /// Used to detect duplicates.
     var contentHash: String
     var sourceAppName: String?

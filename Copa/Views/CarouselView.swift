@@ -1,20 +1,41 @@
 import SwiftUI
 
-/// A horizontally scrolling row of clip cards that snaps to each card.
+/// A horizontally scrolling row that snaps to each card. Folders come first, then the clips —
+/// inside a folder it works exactly the same way, with that folder's contents.
 struct CarouselView: View {
+    /// The folders at this level (or, while searching, the ones below here that match).
+    let folders: [ClipFolder]
+    /// The clips at this level.
     let items: [ClipItem]
+    /// Every folder and section, for the menus on the cards.
+    let allFolders: [ClipFolder]
+    let sections: [ClipSection]
+    /// True when the list gathers clips from several folders, so cards say where they're filed.
+    let showsFolderChips: Bool
+
     @Environment(NotchController.self) private var notch
     @Environment(AppModel.self) private var app
 
-    /// A screenshot is on its way and belongs in the current tab.
+    /// A screenshot is on its way and belongs in the current tab. Screenshots arrive loose in the
+    /// history, so the placeholder only belongs at the top level of the built-in tabs.
     private var showsPendingScreenshot: Bool {
         app.screenshots.pendingCount > 0 && notch.searchText.isEmpty && !notch.showPinnedOnly
+            && notch.currentFolderID == nil && notch.category.sectionID == nil
             && (notch.category == .all || notch.category == .kind(.image))
+    }
+
+    private var entries: [CarouselTarget] {
+        folders.map { .folder($0.id) } + items.map { .clip($0.id) }
+    }
+
+    private var folderNames: [UUID: String] {
+        guard showsFolderChips else { return [:] }
+        return Dictionary(allFolders.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
     }
 
     var body: some View {
         Group {
-            if items.isEmpty && !showsPendingScreenshot {
+            if entries.isEmpty && !showsPendingScreenshot {
                 emptyState
             } else {
                 ScrollViewReader { proxy in
@@ -24,8 +45,17 @@ struct CarouselView: View {
                                 PendingScreenshotCard()
                                     .transition(.scale(scale: 0.8).combined(with: .opacity))
                             }
+                            ForEach(folders) { folder in
+                                FolderCard(folder: folder, sections: sections, folders: allFolders)
+                                    .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                                        content
+                                            .scaleEffect(phase.isIdentity ? 1 : 0.88)
+                                            .opacity(phase.isIdentity ? 1 : 0.4)
+                                    }
+                            }
                             ForEach(items) { item in
-                                ClipCard(item: item)
+                                ClipCard(item: item, sections: sections, folders: allFolders,
+                                         folderName: item.folderID.flatMap { folderNames[$0] })
                                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
                                         content
                                             .scaleEffect(phase.isIdentity ? 1 : 0.88)
@@ -41,38 +71,45 @@ struct CarouselView: View {
                     .scrollIndicators(.hidden)
                     .contentMargins(.horizontal, 4, for: .scrollContent)
                     // Keep the card chosen with the arrow keys in view.
-                    .onChange(of: notch.selection) { _, id in
+                    .onChange(of: notch.selection) { _, target in
                         // Only while open: scrolling during the close animation leaves content behind.
-                        guard let id, notch.isExpanded else { return }
-                        withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(id) }
+                        guard let target, notch.isExpanded else { return }
+                        withAnimation(.snappy(duration: 0.3)) { proxy.scrollTo(target.scrollID) }
                     }
                 }
-                // Start from the beginning whenever the tab or filter changes.
-                .id(notch.category.id + String(notch.showPinnedOnly))
+                // Start from the beginning whenever the tab, folder or filter changes.
+                .id(notch.locationID)
                 .transition(.opacity)
             }
         }
         .frame(height: ClipCard.size.height + 12)
-        .onChange(of: items.map(\.id), initial: true) { _, ids in
-            notch.visibleItemIDs = ids
+        .onChange(of: entries, initial: true) { _, targets in
+            notch.visibleEntries = targets
         }
     }
 
     private var emptyState: some View {
         let isSearching = !notch.searchText.isEmpty
+        let inFolder = notch.currentFolderID != nil
         return VStack(spacing: 6) {
-            Image(systemName: isSearching ? "magnifyingglass" : notch.category.symbol)
+            Image(systemName: isSearching ? "magnifyingglass" : inFolder ? "folder" : notch.category.symbol)
                 .font(.system(size: 28))
                 .foregroundStyle(.tint)
-                .symbolEffect(.bounce, value: notch.category)
-            Text(isSearching ? "No Results" : "Nothing Here Yet")
+                .symbolEffect(.bounce, value: notch.locationID)
+            Text(isSearching ? "No Results" : inFolder ? "Empty Folder" : "Nothing Here Yet")
                 .font(.headline)
-            Text(isSearching ? "Try a different search." : "Copy something, or drop it on the notch.")
+            Text(emptyHint(isSearching: isSearching, inFolder: inFolder))
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
+    }
+
+    private func emptyHint(isSearching: Bool, inFolder: Bool) -> String {
+        if isSearching { return "Try a different search." }
+        if inFolder || notch.category.sectionID != nil { return "Right-click a clip and choose Move to." }
+        return "Copy something, or drop it on the notch."
     }
 }
 

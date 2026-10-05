@@ -31,7 +31,8 @@ final class ClipStore {
         let storeURL = BlobStore.rootDirectory.appending(path: "Copa.store")
         let configuration = ModelConfiguration(url: storeURL)
         do {
-            container = try ModelContainer(for: ClipItem.self, configurations: configuration)
+            container = try ModelContainer(for: ClipItem.self, ClipFolder.self, ClipSection.self,
+                                           configurations: configuration)
         } catch {
             fatalError("Could not open Copa's database: \(error)")
         }
@@ -125,14 +126,16 @@ final class ClipStore {
     }
 
     func delete(_ item: ClipItem) {
+        let folderID = item.folderID
         BlobStore.delete(item.blobFilenames)
         context.delete(item)
         save()
+        refreshStats(from: folderID)
     }
 
-    /// Deletes everything except pinned clips.
+    /// Deletes everything except pinned clips and the ones filed in a section or folder.
     func clearUnpinned() {
-        let descriptor = FetchDescriptor<ClipItem>(predicate: #Predicate { !$0.isPinned })
+        let descriptor = FetchDescriptor<ClipItem>(predicate: #Predicate { !$0.isPinned && !$0.isFiled })
         for item in (try? context.fetch(descriptor)) ?? [] {
             BlobStore.delete(item.blobFilenames)
             context.delete(item)
@@ -140,12 +143,13 @@ final class ClipStore {
         save()
     }
 
-    /// Removes the oldest unpinned clips beyond the history limit.
+    /// Removes the oldest clips beyond the history limit. Pinned clips and clips the user filed in
+    /// a section or folder are kept: the limit only applies to the history that fills up by itself.
     func prune() {
         let limit = historyLimit
         guard limit > 0 else { return }
         var descriptor = FetchDescriptor<ClipItem>(
-            predicate: #Predicate { !$0.isPinned },
+            predicate: #Predicate { !$0.isPinned && !$0.isFiled },
             sortBy: [SortDescriptor(\.lastUsedAt, order: .reverse)]
         )
         descriptor.fetchOffset = limit
@@ -158,7 +162,7 @@ final class ClipStore {
         save()
     }
 
-    private func save() {
+    func save() {
         do { try context.save() } catch { print("Copa: failed to save – \(error)") }
     }
 }

@@ -30,19 +30,35 @@ enum ClipKind: String, CaseIterable, Codable, Identifiable {
         case .color: "paintpalette"
         }
     }
+
+    /// One bit per kind, so a folder can remember everything it holds in a single number
+    /// (`ClipFolder.kindsMask`) instead of being walked on every redraw.
+    var bit: Int {
+        switch self {
+        case .text: 1 << 0
+        case .link: 1 << 1
+        case .image: 1 << 2
+        case .file: 1 << 3
+        case .color: 1 << 4
+        }
+    }
 }
 
-/// A tab in the notch: "All" plus one tab per kind.
-enum ClipCategory: Hashable, Identifiable, CaseIterable {
+/// A tab in the notch: "All", one per kind, plus the sections the user made.
+enum ClipCategory: Hashable, Identifiable {
     case all
     case kind(ClipKind)
+    /// A section the user made, by its `ClipSection.id`.
+    case section(UUID)
 
-    static var allCases: [ClipCategory] { [.all] + ClipKind.allCases.map { .kind($0) } }
+    /// The tabs Copa comes with. Custom sections follow them.
+    static let builtIn: [ClipCategory] = [.all] + ClipKind.allCases.map { .kind($0) }
 
     var id: String {
         switch self {
         case .all: "all"
         case .kind(let kind): kind.rawValue
+        case .section(let id): id.uuidString
         }
     }
 
@@ -50,6 +66,8 @@ enum ClipCategory: Hashable, Identifiable, CaseIterable {
         switch self {
         case .all: "All"
         case .kind(let kind): kind.title
+        // The tab bar draws sections from the section itself, which knows its name.
+        case .section: "Section"
         }
     }
 
@@ -57,13 +75,29 @@ enum ClipCategory: Hashable, Identifiable, CaseIterable {
         switch self {
         case .all: "square.grid.2x2"
         case .kind(let kind): kind.symbol
+        case .section: "folder"
         }
     }
 
-    func contains(_ item: ClipItem) -> Bool {
+    /// The custom section this tab shows, if it is one.
+    var sectionID: UUID? {
+        if case .section(let id) = self { return id }
+        return nil
+    }
+
+    /// Does this tab show clips of that kind? Where the clip is filed is a separate question.
+    func shows(_ item: ClipItem) -> Bool {
         switch self {
-        case .all: true
+        case .all, .section: true
         case .kind(let kind): item.kind == kind
+        }
+    }
+
+    /// A folder shows in a kind tab only when it holds something of that kind.
+    func shows(_ folder: ClipFolder) -> Bool {
+        switch self {
+        case .all, .section: true
+        case .kind(let kind): folder.holds(kind)
         }
     }
 }
