@@ -24,10 +24,6 @@ struct CarouselView: View {
             && (notch.category == .all || notch.category == .kind(.image))
     }
 
-    private var entries: [CarouselTarget] {
-        folders.map { .folder($0.id) } + items.map { .clip($0.id) }
-    }
-
     private var folderNames: [UUID: String] {
         guard showsFolderChips else { return [:] }
         return Dictionary(allFolders.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
@@ -35,7 +31,7 @@ struct CarouselView: View {
 
     var body: some View {
         Group {
-            if entries.isEmpty && !showsPendingScreenshot {
+            if folders.isEmpty && items.isEmpty && !showsPendingScreenshot {
                 emptyState
             } else {
                 ScrollViewReader { proxy in
@@ -70,6 +66,11 @@ struct CarouselView: View {
                     .scrollTargetBehavior(.viewAligned)
                     .scrollIndicators(.hidden)
                     .contentMargins(.horizontal, 4, for: .scrollContent)
+                    // Coming back from the preview, start where the preview left off.
+                    .onAppear {
+                        guard notch.isExpanded, let target = notch.selection else { return }
+                        proxy.scrollTo(target.scrollID)
+                    }
                     // Keep the card chosen with the arrow keys in view.
                     .onChange(of: notch.selection) { _, target in
                         // Only while open: scrolling during the close animation leaves content behind.
@@ -83,9 +84,6 @@ struct CarouselView: View {
             }
         }
         .frame(height: ClipCard.size.height + 12)
-        .onChange(of: entries, initial: true) { _, targets in
-            notch.visibleEntries = targets
-        }
     }
 
     private var emptyState: some View {

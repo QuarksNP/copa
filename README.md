@@ -5,6 +5,7 @@ A free, lightweight clipboard history that lives in your MacBook's notch.
 Everything you copy is saved automatically. Hover the notch and your history opens as a carousel with these tabs: **All · Text · Links · Images · Files · Colors**, plus any **sections** you add yourself.
 
 - **Click** a card to copy it again, then paste with ⌘V.
+- **Preview** a card to read it without copying it: hover it and click the eye, or press **Space**. The panel opens out and shows the whole thing — all of a long text (selectable, with a code view for anything you'd rather read in a monospaced font), the image at a real size, a link's full address, every path of a file clip, a color with its hex and RGB. ← → move to the card before or after, **Space** or **Esc** goes back, **Return** copies and closes.
 - **Drag** a card into any app (Mail, Slack, Finder, Notes…).
 - **Drop** anything (files, images, text, links) onto the notch. Copa saves it and sorts it into the right tab.
 - **Screenshots** you take (⇧⌘3, ⇧⌘4, ⇧⌘5) show up in Images automatically, ready to copy again. The notch shows a spinner the moment you take one.
@@ -15,7 +16,7 @@ Everything you copy is saved automatically. Hover the notch and your history ope
 - **Folders** keep clips you want to find again. Click **New Folder**, then drop clips on the folder or use **Move to** in a clip's menu. Folders sit at the front of the carousel, like pinned clips. Click one to look inside; folders can hold folders, as deep as you like. **Drag a folder** onto another one to move it in, or onto a step of the path above the carousel to move it back out.
 - **Sections** are tabs you make yourself. Click **+** next to the tabs, name it (Work, Scripts, Receipts…), and move clips in. A section has its own list and its own folders. A clip lives in one place: filing it in a folder or a section takes it out of the list it came from, so nothing is in two places at once. Right-click a section's tab to rename it, change its icon, move it, or remove it (keeping its clips or deleting them with it).
 - **Search** with the field in the top-right. It looks inside folders too, so a clip you filed away is still one search away. The 📌 button shows pinned clips only, wherever they are.
-- **Keyboard:** while Copa is open, ← → move between cards, **Delete** removes the selected one (the latest copy by default), and **Return** copies it and closes Copa. On a folder, **Return** opens it and **Delete** removes it when it's empty. **Esc** steps out of a folder, then closes Copa.
+- **Keyboard:** while Copa is open, ← → move between cards, **Space** shows the selected one in full, **Delete** removes it (the latest copy by default), and **Return** copies it and closes Copa. On a folder, **Return** opens it and **Delete** removes it when it's empty. **Esc** closes the preview, then steps out of a folder, then closes Copa.
 
 Copa has no Dock icon. Use the clipboard icon in the menu bar to open Copa, pause capturing, open Settings, or quit.
 
@@ -104,7 +105,7 @@ Copa/
 │   ├── NotchShape           The notch silhouette (animatable)
 │   └── NotchView            Root SwiftUI view
 └── Views/                   Category tabs, path bar, carousel, clip and folder
-                             cards, move menus, settings
+                             cards, the preview pane, move menus, settings
 ```
 
 Any new `.swift` file you add inside the `Copa/` folder is picked up by Xcode automatically.
@@ -119,7 +120,7 @@ In Debug builds, you can drive Copa from Terminal. This opens or closes the notc
 swift -e 'import Foundation; DistributedNotificationCenter.default().postNotificationName(.init("com.copa.debug.toggle"), object: nil, userInfo: nil, deliverImmediately: true)'
 ```
 
-Pass a name after `com.copa.debug.` and a string as `object:`. Alongside `toggle`, `snapshot`, `views`, `category`, `rename`, `key`, `copy` and `screenshot`, there are `hold` (keep the panel open while you drive it), `search`, `newfolder`, `openfolder` (a name, `..`, or empty for the top), `delfolder` / `delfolderall`, `file` (put the selected clip in a folder or section), `newsection` and `delsection` / `delsectionall`. See `NotchWindowController.installMonitors`.
+Pass a name after `com.copa.debug.` and a string as `object:`. Alongside `toggle`, `snapshot`, `views`, `category`, `rename`, `key`, `copy` and `screenshot`, there are `hold` (keep the panel open while you drive it), `preview` (show the selected card in full, `off` to go back), `search`, `newfolder`, `openfolder` (a name, `..`, or empty for the top), `delfolder` / `delfolderall`, `file` (put the selected clip in a folder or section), `newsection` and `delsection` / `delsectionall`. See `NotchWindowController.installMonitors`.
 
 ## License
 

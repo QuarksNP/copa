@@ -51,6 +51,7 @@ struct ClipCard: View {
                               lineWidth: isSelected ? 2 : 1)
         }
         .animation(.snappy(duration: 0.2), value: isSelected)
+        .overlay(alignment: .topTrailing) { if isHovered && notch.editing == nil { previewButton } }
         .overlay { if showCopied { copiedOverlay } }
         .contentShape(.rect(cornerRadius: 18))
         .scaleEffect(isHovered ? 1.03 : 1)
@@ -66,6 +67,25 @@ struct ClipCard: View {
         }
         .contextMenu { contextMenu }
         .help("Click to copy · Drag to use")
+    }
+
+    /// Opens the card in full, without copying it: the whole text, the image at a real size.
+    private var previewButton: some View {
+        Button {
+            notch.selectedEntry = .clip(item.id)
+            notch.openPreview()
+        } label: {
+            Image(systemName: "eye")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 22, height: 22)
+                .background(.black.opacity(0.55), in: .circle)
+                .overlay(Circle().strokeBorder(.white.opacity(0.18)))
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .padding(6)
+        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+        .help("See it all (Space)")
     }
 
     // MARK: Preview per kind
@@ -233,6 +253,10 @@ struct ClipCard: View {
     @ViewBuilder
     private var contextMenu: some View {
         Button("Copy", systemImage: "doc.on.doc", action: copy)
+        Button("Preview", systemImage: "eye") {
+            notch.selectedEntry = .clip(item.id)
+            notch.openPreview()
+        }
         Button(item.isPinned ? "Unpin" : "Pin", systemImage: item.isPinned ? "pin.slash" : "pin") {
             withAnimation(.snappy) { app.store.togglePin(item) }
         }

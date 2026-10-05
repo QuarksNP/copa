@@ -9,7 +9,8 @@ struct NotchView: View {
 
     var body: some View {
         let expanded = notch.isExpanded
-        let size = expanded ? NotchController.expandedSize
+        // The open panel is taller while it shows a card in full (`notch.expandedSize`).
+        let size = expanded ? notch.expandedSize
             : notch.activity != nil ? notch.activityShapeSize : notch.collapsedShapeSize
         let shape = NotchShape(
             topRadius: expanded ? NotchController.expandedTopRadius : NotchController.collapsedTopRadius,
@@ -43,7 +44,11 @@ struct NotchView: View {
         .frame(width: size.width, height: size.height)
         .clipShape(shape)
         .contentShape(shape)
-        .shadow(color: .black.opacity(expanded ? 0.55 : 0), radius: 18, y: 8)
+        // Two soft layers, the way a real window casts a shadow: a wide one for depth and a
+        // tight one where the panel meets the screen. Both stay inside `shadowPadding`, or the
+        // window's edge would cut them off.
+        .shadow(color: .black.opacity(expanded ? 0.26 : 0), radius: 20, y: 8)
+        .shadow(color: .black.opacity(expanded ? 0.12 : 0), radius: 5, y: 1)
         .onDrop(of: PasteboardWriter.acceptedDropTypes, isTargeted: Bindable(notch).isDropTargeted) { providers in
             guard !notch.isDraggingFromCard else { return false }
             // Dropping while a section or folder is open puts it there, which is where the
@@ -200,23 +205,46 @@ private struct ExpandedNotchContent: View {
     }
 
     var body: some View {
+        // Worked out once per redraw: the cards at this level, and the order the keyboard follows.
+        let folders = visibleFolders
+        let items = visibleItems
+        let entries = folders.map { CarouselTarget.folder($0.id) } + items.map { CarouselTarget.clip($0.id) }
+        let selection = notch.selection
+
         VStack(spacing: 10) {
             header
-            HStack(spacing: 10) {
-                CategoryBar(sections: sections, counts: counts)
-                NewSectionButton()
-                PinFilterButton()
-                SearchField()
+            if notch.isPreviewing {
+                // One card in full, instead of the carousel. It follows the selection, so the
+                // arrow keys still flip through the same list.
+                PreviewPane(item: clip(selection), folder: folder(selection),
+                            position: selection.flatMap { entries.firstIndex(of: $0) }.map { $0 + 1 },
+                            total: entries.count)
+                    .transition(.opacity)
+            } else {
+                VStack(spacing: 10) {
+                    HStack(spacing: 10) {
+                        CategoryBar(sections: sections, counts: counts)
+                        NewSectionButton()
+                        PinFilterButton()
+                        SearchField()
+                    }
+                    PathBar(rootTitle: currentSection?.name ?? notch.category.title,
+                            rootSymbol: currentSection?.symbol ?? notch.category.symbol,
+                            sectionID: sectionID,
+                            trail: trail,
+                            folders: allFolders)
+                    CarouselView(folders: folders, items: items, allFolders: allFolders,
+                                 sections: sections, showsFolderChips: isFlattened)
+                }
+                .transition(.opacity)
             }
-            PathBar(rootTitle: currentSection?.name ?? notch.category.title,
-                    rootSymbol: currentSection?.symbol ?? notch.category.symbol,
-                    sectionID: sectionID,
-                    trail: trail,
-                    folders: allFolders)
-            CarouselView(folders: visibleFolders, items: visibleItems, allFolders: allFolders,
-                         sections: sections, showsFolderChips: isFlattened)
         }
         .padding(.bottom, 12)
+        // What the keyboard moves between. Kept here rather than in the carousel, so it stays
+        // right while the preview has the carousel's place.
+        .onChange(of: entries, initial: true) { _, targets in
+            notch.visibleEntries = targets
+        }
         // A folder or section can be deleted while we're looking inside it.
         .onChange(of: allFolders.map(\.id)) { _, ids in
             notch.trimPath(toExisting: Set(ids))
@@ -224,6 +252,17 @@ private struct ExpandedNotchContent: View {
         .onChange(of: sections.map(\.id)) { _, ids in
             if let sectionID, !ids.contains(sectionID) { notch.category = .all }
         }
+    }
+
+    /// The clip a card stands for, for the preview pane.
+    private func clip(_ target: CarouselTarget?) -> ClipItem? {
+        guard case .clip(let id)? = target else { return nil }
+        return allItems.first { $0.id == id }
+    }
+
+    private func folder(_ target: CarouselTarget?) -> ClipFolder? {
+        guard case .folder(let id)? = target else { return nil }
+        return allFolders.first { $0.id == id }
     }
 
     /// Sits on either side of the physical notch.

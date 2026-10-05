@@ -25,6 +25,9 @@ final class NotchController {
     // MARK: Layout constants
 
     static let expandedSize = CGSize(width: 820, height: 312)
+    /// The open panel while a card is shown in full: as much room as a notch panel can take
+    /// without covering the screen. Kept inside the screen by `previewSize`.
+    static let previewSize = CGSize(width: 880, height: 600)
     static let collapsedTopRadius: CGFloat = 6
     static let collapsedBottomRadius: CGFloat = 10
     static let expandedTopRadius: CGFloat = 14
@@ -95,6 +98,10 @@ final class NotchController {
         isDraggingFromCard = false
     }
 
+    /// True while the panel shows one card in full instead of the carousel. The pane follows
+    /// `selection`, so ← → flip through the cards without leaving it.
+    private(set) var isPreviewing = false
+
     /// What's being renamed inline, if anything.
     enum Editing: Hashable {
         case clip(UUID)
@@ -106,6 +113,16 @@ final class NotchController {
 
     var collapsedShapeSize: CGSize {
         CGSize(width: notchSize.width + 2 * Self.collapsedTopRadius, height: notchSize.height)
+    }
+
+    /// How big the open panel is: the carousel, or the taller pane that shows one card in full.
+    var expandedSize: CGSize { isPreviewing ? previewSize : Self.expandedSize }
+
+    /// `Self.previewSize`, never taller than the screen it opens on.
+    private var previewSize: CGSize {
+        guard let screen else { return Self.previewSize }
+        let room = screen.frame.height - 2 * Self.shadowPadding
+        return CGSize(width: Self.previewSize.width, height: min(Self.previewSize.height, room))
     }
 
     /// Something shown in the collapsed notch, Dynamic Island style.
@@ -170,17 +187,7 @@ final class NotchController {
         hostingView.frame = hoverView.bounds
         contentView = hostingView
         hoverView.onHoverChange = { [weak self] hovering in self?.hoverChanged(hovering) }
-        // Esc backs out one step at a time: stop renaming, leave the folder, then close.
-        panel.onEscape = { [weak self] in
-            guard let self else { return }
-            if self.editing != nil {
-                self.editing = nil
-            } else if !self.folderPath.isEmpty {
-                self.goUp()
-            } else {
-                self.collapse()
-            }
-        }
+        panel.onEscape = { [weak self] in self?.escape() }
 
         app.screenshots.onEvent = { [weak self] event in self?.handleScreenshot(event) }
 
@@ -250,17 +257,20 @@ final class NotchController {
         activity == nil ? collapsedFrame : activityFrame
     }
 
-    private var expandedFrame: CGRect {
+    private var expandedFrame: CGRect { expandedFrame(for: expandedSize) }
+
+    /// The window frame that holds a panel of `size`, with room around it for the shadow.
+    private func expandedFrame(for size: CGSize) -> CGRect {
         guard let screen else { return .zero }
-        let width = Self.expandedSize.width + 2 * Self.shadowPadding
-        let height = Self.expandedSize.height + Self.shadowPadding
+        let width = size.width + 2 * Self.shadowPadding
+        let height = size.height + Self.shadowPadding
         return CGRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - height, width: width, height: height)
     }
 
     /// The visible black area when expanded, in screen coordinates.
     private var expandedShapeRect: CGRect {
         guard let screen else { return .zero }
-        let size = Self.expandedSize
+        let size = expandedSize
         return CGRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height,
                       width: size.width, height: size.height)
     }
@@ -321,6 +331,7 @@ final class NotchController {
     private func resetAfterClosing() {
         if !searchText.isEmpty { searchText = "" }
         if !folderPath.isEmpty { folderPath = [] }
+        isPreviewing = false
         selectedEntry = nil
         editing = nil
         app.panelDidClose()
@@ -361,6 +372,46 @@ final class NotchController {
         withAnimation(.snappy(duration: 0.3)) {
             folderPath = Array(folderPath.prefix(first))
             selectedEntry = nil
+        }
+    }
+
+    // MARK: Preview
+
+    /// Shows the selected card in full: the whole text, the image at a real size, every path of a
+    /// file clip. The panel grows for it, the way it widens for a screenshot.
+    func openPreview() {
+        guard isExpanded, !isPreviewing, selection != nil else { return }
+        editing = nil
+        // Grow the window first; SwiftUI then animates the notch opening further inside it.
+        setPanelFrame(expandedFrame(for: previewSize))
+        withAnimation(Self.openAnimation) { isPreviewing = true }
+    }
+
+    /// Back to the carousel, shrinking the panel once the pane has animated away.
+    func closePreview() {
+        guard isPreviewing else { return }
+        withAnimation(Self.closeAnimation) {
+            isPreviewing = false
+        } completion: { [weak self] in
+            guard let self, self.isExpanded, !self.isPreviewing else { return }
+            self.setPanelFrame(self.expandedFrame)
+        }
+    }
+
+    func togglePreview() {
+        isPreviewing ? closePreview() : openPreview()
+    }
+
+    /// Esc backs out one step at a time: stop renaming, close the preview, leave the folder, close.
+    func escape() {
+        if editing != nil {
+            editing = nil
+        } else if isPreviewing {
+            closePreview()
+        } else if !folderPath.isEmpty {
+            goUp()
+        } else {
+            collapse()
         }
     }
 
@@ -422,17 +473,21 @@ final class NotchController {
 
     // MARK: Keyboard
 
-    /// ← → move between cards, Delete removes the selected card, Return copies it and closes.
-    /// On a folder, Return opens it and Delete removes it when it's empty.
+    /// ← → move between cards, Space shows the selected one in full, Delete removes it, Return
+    /// copies it and closes. On a folder, Return opens it and Delete removes it when it's empty.
     private func handleKey(_ event: NSEvent) -> Bool {
         guard isExpanded, event.window === panel,
-              event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-              // Let the search and rename fields handle their own typing.
-              !(panel.firstResponder is NSText) else { return false }
+              event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+        else { return false }
+        // Let the search and rename fields handle their own typing. The preview's text view is
+        // read-only: nothing is typed into it, so the keys keep moving between cards.
+        if let text = panel.firstResponder as? NSText, text.isEditable { return false }
 
         switch Int(event.keyCode) {
         case 123: moveSelection(by: -1)                  // ←
         case 124: moveSelection(by: 1)                   // →
+        case 49: togglePreview()                          // Space
+        case 53: escape()                                 // Esc
         case 51, 117: deleteSelection()                   // Delete, Forward Delete
         case 36, 76: useSelection()                       // Return, Enter
         default: return false
@@ -454,6 +509,8 @@ final class NotchController {
         // Select the card that slides into its place (or the one before, if it was the last).
         let neighbor = visibleEntries.indices.contains(index + 1) ? index + 1 : index - 1
         let next = visibleEntries.indices.contains(neighbor) ? visibleEntries[neighbor] : nil
+        // Nothing left to show in full.
+        if next == nil { closePreview() }
 
         switch current {
         case .clip(let id):
@@ -521,6 +578,11 @@ final class NotchController {
                 self.isHeldOpen = !off
                 if self.isHeldOpen { self.expand(fromMenu: true) }
             }
+        })
+        // Shows the selected card in full, or goes back ("off").
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.copa.debug.preview"), object: nil, queue: .main) { [weak self] note in
+            let off = (note.object as? String) == "off"
+            MainActor.assumeIsolated { off ? self?.closePreview() : self?.openPreview() }
         })
         // Switches tab: a kind ("link"), a section's name, or anything else for All.
         observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.copa.debug.category"), object: nil, queue: .main) { [weak self] note in
@@ -651,7 +713,7 @@ final class NotchController {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 var lines = ["window \(self.panel.frame) expanded=\(self.isExpanded)"]
-                lines.append("tab=\(self.category.id) path=\(self.folderPath.count) selection=\(String(describing: self.selection)) entries=\(self.visibleEntries.count)")
+                lines.append("tab=\(self.category.id) path=\(self.folderPath.count) selection=\(String(describing: self.selection)) entries=\(self.visibleEntries.count) preview=\(self.isPreviewing)")
                 for folder in self.app.store.folders() {
                     lines.append("folder \(folder.name) section=\(folder.sectionID?.uuidString.prefix(4) ?? "-") parent=\(folder.parentID?.uuidString.prefix(4) ?? "-") items=\(folder.itemCount) kinds=\(folder.kinds.map(\.rawValue).joined(separator: ","))")
                 }
@@ -755,8 +817,10 @@ final class NotchController {
         #if DEBUG
         if isHeldOpen { outsideSince = nil; return }
         #endif
-        // Keep open while dragging, while a menu is open, while renaming, or right after opening from the menu bar.
-        if buttonDown || isMenuOpen || isDropTargeted || editing != nil || (openedFromMenu && !mouseHasEntered) {
+        // Keep open while dragging, while a menu is open, while renaming, while a card is shown
+        // in full (reading isn't pointing), or right after opening from the menu bar.
+        if buttonDown || isMenuOpen || isDropTargeted || editing != nil || isPreviewing
+            || (openedFromMenu && !mouseHasEntered) {
             outsideSince = nil
             return
         }

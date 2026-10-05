@@ -4,11 +4,26 @@ A notch clipboard history for macOS (SwiftUI + AppKit + SwiftData, macOS 26). Se
 
 - Build (Debug): `xcodebuild -project Copa.xcodeproj -scheme Copa -configuration Debug -derivedDataPath ~/Library/Caches/Copa/DerivedData.noindex build`
 - Install (Release, to /Applications): `./scripts/install.sh`
-- Debug builds listen for `com.copa.debug.*` distributed notifications (toggle, hold, snapshot, views, category, search, rename, key, copy, screenshot, newfolder, openfolder, delfolder, delfolderall, file, drop, newsection, delsection, delsectionall) to drive the UI from Terminal; see `NotchWindowController.installMonitors`. `hold` keeps the panel open while you script it, `views` dumps the tab, path, selection, folders and sections, and `drop` runs a drag and drop without a mouse (posting real mouse events needs Accessibility, which a terminal usually doesn't have).
+- Debug builds listen for `com.copa.debug.*` distributed notifications (toggle, hold, snapshot, views, category, search, preview, rename, key, copy, screenshot, newfolder, openfolder, delfolder, delfolderall, file, drop, newsection, delsection, delsectionall) to drive the UI from Terminal; see `NotchWindowController.installMonitors`. `hold` keeps the panel open while you script it, `views` dumps the tab, path, selection, preview, folders and sections, `preview` shows the selected card in full (`off` goes back), and `drop` runs a drag and drop without a mouse (posting real mouse events needs Accessibility, which a terminal usually doesn't have).
 
 ## Notch panel rule
 
 Never change what the open panel shows (search text, selection, clip order, scroll position) while it's animating closed. The carousel is an AppKit scroll view; if it scrolls mid-close, SwiftUI leaves the panel's content stuck inside the closed notch. Do resets after the close finishes (`NotchController.resetAfterClosing`).
+
+## The preview pane
+
+Space (or a card's eye button) replaces the carousel with one card shown in full, and the panel
+grows to `NotchController.previewSize` for it. The pane follows `NotchController.selection` rather
+than remembering a card, so ← → flip through the same list and deleting the card shown moves the
+pane to its neighbour. Opening grows the window first and then animates the shape, the way an
+activity does; closing animates first and shrinks after.
+
+- **A clip can be megabytes.** The pane cuts text at `TextPane.maxCharacters` and says so, counts
+  and cuts it off the main thread, and decodes an image at up to 1600 px into the view's own state
+  — never into `ImageCache`, whose budget assumes thumbnails.
+- **Long text goes in an `NSTextView`,** not a SwiftUI `Text`: it lays out a long clip without
+  stalling and stays selectable. It's read-only, which is why `handleKey` still gets Space, Esc and
+  the arrow keys while it has focus (an editable field keeps them).
 
 ## Folders and sections
 

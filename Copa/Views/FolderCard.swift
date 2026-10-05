@@ -164,6 +164,10 @@ struct FolderCard: View {
     @ViewBuilder
     private var contextMenu: some View {
         Button("Open", systemImage: "folder") { notch.open(folderID: folder.id) }
+        Button("Preview", systemImage: "eye") {
+            notch.selectedEntry = .folder(folder.id)
+            notch.openPreview()
+        }
         Button("New Folder Inside", systemImage: "folder.badge.plus") {
             let new = app.store.addFolder(name: "New Folder", in: folder.sectionID, parentID: folder.id)
             notch.open(folderID: folder.id)
