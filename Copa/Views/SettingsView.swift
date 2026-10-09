@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Query private var items: [ClipItem]
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var confirmClear = false
+    @AppStorage(Markdown.enabledKey) private var formatsMarkdown = true
 
     private let limits = [100, 250, 500, 1000, 0]
 
@@ -29,6 +30,15 @@ struct SettingsView: View {
                 Text("Screenshots")
             } footer: {
                 Text("Screenshots taken with ⇧⌘3, ⇧⌘4 or ⇧⌘5 appear in Images, ready to copy again. The first time, macOS asks to let Copa read the folder your screenshots are saved in.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Format Markdown", isOn: $formatsMarkdown)
+            } header: {
+                Text("Text")
+            } footer: {
+                Text("Text written in Markdown (headings, lists, **bold**, `code`, tables) shows formatted, and pastes formatted into apps like Notes, Mail and Pages. Code editors and Terminal still get the Markdown as written.")
                     .foregroundStyle(.secondary)
             }
 

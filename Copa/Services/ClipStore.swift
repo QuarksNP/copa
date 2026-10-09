@@ -45,7 +45,7 @@ final class ClipStore {
     @discardableResult
     func add(_ payload: ClipPayload, from app: NSRunningApplication?,
              sourceName: String? = nil, sourceBundleID: String? = nil) async -> ClipItem? {
-        let hash = await Task.detached { payload.contentHash }.value
+        let (hash, isMarkdown) = await Task.detached { (payload.contentHash, payload.isMarkdown) }.value
         let sourceName = app?.localizedName ?? sourceName
         let sourceBundleID = app?.bundleIdentifier ?? sourceBundleID
 
@@ -53,6 +53,7 @@ final class ClipStore {
         if let existing = item(withHash: hash) {
             existing.lastUsedAt = .now
             if let sourceBundleID { existing.sourceAppName = sourceName; existing.sourceBundleID = sourceBundleID }
+            existing.isMarkdown = isMarkdown
             save()
             onSave?(existing)
             return existing
@@ -63,6 +64,7 @@ final class ClipStore {
         switch payload {
         case .text(let string):
             item.text = string
+            item.isMarkdown = isMarkdown
         case .link(let url, let original):
             item.text = original
             item.urlString = url.absoluteString
@@ -97,6 +99,22 @@ final class ClipStore {
         prune()
         onSave?(item)
         return item
+    }
+
+    /// Text clips saved before Copa knew Markdown get looked at once, so their cards and pastes
+    /// are formatted too. Reading happens off the main thread, a clip at a time.
+    func detectMarkdownInOlderClips() async {
+        let key = "markdownDetected"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        let text = ClipKind.text.rawValue
+        let descriptor = FetchDescriptor<ClipItem>(predicate: #Predicate { $0.kindRaw == text })
+        for item in (try? context.fetch(descriptor)) ?? [] {
+            let sample = String((item.text ?? "").prefix(10_000))
+            let isMarkdown = await Task.detached(priority: .utility) { Markdown.detect(sample) }.value
+            if item.modelContext != nil, !item.isDeleted { item.isMarkdown = isMarkdown }
+        }
+        save()
+        UserDefaults.standard.set(true, forKey: key)
     }
 
     private func item(withHash hash: String) -> ClipItem? {

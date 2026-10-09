@@ -99,10 +99,16 @@ struct ClipCard: View {
                     nameLabel(name)
                 }
                 // The card shows ~7 lines, so don't lay out more text than that (clips can be huge).
-                Text((item.text ?? "").prefix(600))
-                    .font(.system(size: 12))
-                    .lineLimit(item.customName == nil ? 7 : 5)
-                    .foregroundStyle(item.customName == nil ? .primary : .secondary)
+                Group {
+                    if item.isMarkdown {
+                        MarkdownCardText(item: item)
+                    } else {
+                        Text((item.text ?? "").prefix(600))
+                    }
+                }
+                .font(.system(size: 12))
+                .lineLimit(item.customName == nil ? 7 : 5)
+                .foregroundStyle(item.customName == nil ? .primary : .secondary)
             }
 
         case .link:
@@ -288,6 +294,42 @@ struct ClipCard: View {
         Button("Delete", systemImage: "trash", role: .destructive) {
             withAnimation(.snappy) { app.store.delete(item) }
         }
+    }
+}
+
+/// The start of a Markdown clip, formatted: headings in bold, list items with their bullets.
+private struct MarkdownCardText: View {
+    let item: ClipItem
+
+    @AppStorage(Markdown.enabledKey) private var formatsMarkdown = true
+
+    /// Formatted once per clip: the carousel redraws its cards often, the text never changes.
+    private static let cache: NSCache<NSUUID, Formatted> = {
+        let cache = NSCache<NSUUID, Formatted>()
+        cache.countLimit = 150
+        return cache
+    }()
+
+    private final class Formatted {
+        let text: AttributedString
+        init(_ text: AttributedString) { self.text = text }
+    }
+
+    var body: some View {
+        let start = String((item.text ?? "").prefix(600))
+        if formatsMarkdown {
+            Text(formatted(start))
+        } else {
+            Text(start)
+        }
+    }
+
+    private func formatted(_ start: String) -> AttributedString {
+        let key = item.id as NSUUID
+        if let cached = Self.cache.object(forKey: key) { return cached.text }
+        let text = Markdown.cardText(start)
+        Self.cache.setObject(Formatted(text), forKey: key)
+        return text
     }
 }
 

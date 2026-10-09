@@ -34,6 +34,11 @@ enum ClipPayload: Sendable {
         }
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
+
+    /// Text written in Markdown. Only plain text can be: a link or a color is a single value.
+    nonisolated var isMarkdown: Bool {
+        if case .text(let string) = self { Markdown.detect(string) } else { false }
+    }
 }
 
 /// Decides which category something belongs to.

@@ -29,6 +29,10 @@ final class ClipItem {
     var linkIconFilename: String? = nil
     var linkPreviewFetched: Bool = false
 
+    /// Text written in Markdown, shown formatted and pasted as rich text (see `Markdown`).
+    /// Decided once when the clip is saved, so cards never have to look.
+    var isMarkdown: Bool = false
+
     /// A name the user gave this clip in Copa (nil = use the automatic name).
     var customName: String? = nil
 
@@ -84,7 +88,9 @@ final class ClipItem {
         switch kind {
         case .text:
             // Only look at the start: copied text can be megabytes long.
-            let firstLine = (text ?? "").prefix(200).prefix { !$0.isNewline }
+            var firstLine = (text ?? "").prefix(200).prefix { !$0.isNewline }
+            // "## Release notes" is named "Release notes".
+            if isMarkdown { firstLine = firstLine.drop { $0 == "#" || $0 == ">" } }
             return String(firstLine.trimmingCharacters(in: .whitespaces).prefix(60))
         case .link:
             if let linkTitle, !linkTitle.isEmpty { return linkTitle }

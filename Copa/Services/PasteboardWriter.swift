@@ -9,7 +9,16 @@ enum PasteboardWriter {
         pasteboard.clearContents()
 
         switch item.kind {
-        case .text, .color:
+        case .text:
+            let text = item.text ?? ""
+            pasteboard.setString(text, forType: .string)
+            // Markdown also goes as formatted text: Notes, Mail or Pages paste that, while code
+            // editors and Terminal still take the Markdown itself.
+            if item.isMarkdown, Markdown.isEnabled, let rich = Markdown.richText(text) {
+                pasteboard.setData(rich.rtf, forType: .rtf)
+                if let html = rich.html { pasteboard.setData(html, forType: .html) }
+            }
+        case .color:
             pasteboard.setString(item.text ?? "", forType: .string)
         case .link:
             if let url = item.url { pasteboard.writeObjects([url as NSURL]) }
@@ -52,7 +61,18 @@ enum PasteboardWriter {
     /// What other apps receive when a card is dragged out of Copa.
     static func itemProvider(for item: ClipItem) -> NSItemProvider {
         switch item.kind {
-        case .text, .color:
+        case .text:
+            let text = item.text ?? ""
+            let provider = NSItemProvider(object: text as NSString)
+            if item.isMarkdown, Markdown.isEnabled {
+                // Formatted only if the app it lands in asks for it.
+                provider.registerDataRepresentation(forTypeIdentifier: UTType.rtf.identifier, visibility: .all) { completion in
+                    completion(Markdown.richText(text)?.rtf, nil)
+                    return nil
+                }
+            }
+            return provider
+        case .color:
             return NSItemProvider(object: (item.text ?? "") as NSString)
         case .link:
             guard let url = item.url else { return NSItemProvider(object: (item.text ?? "") as NSString) }

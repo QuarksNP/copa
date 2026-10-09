@@ -213,17 +213,23 @@ struct PreviewPane: View {
 
 /// The whole text of a clip, in an AppKit text view: it lays out a long clip without the stall a
 /// SwiftUI `Text` would cause, and the text stays selectable so part of it can be taken.
+/// Markdown is shown formatted; the code view shows it as it was written.
 private struct TextPane: View {
     let item: ClipItem
 
     @AppStorage("previewMonospaced") private var monospaced = false
+    @AppStorage(Markdown.enabledKey) private var formatsMarkdown = true
     @State private var content = Content()
 
     var body: some View {
         VStack(spacing: 0) {
-            TextViewer(text: content.shown, monospaced: monospaced, key: content.key)
+            TextViewer(text: content.shown, formatted: content.formatted?.text,
+                       monospaced: monospaced, key: content.key)
             Divider().opacity(0.3)
             HStack(spacing: 6) {
+                if content.formatted != nil {
+                    Text("Markdown ·")
+                }
                 Text(summary)
                 if content.truncated {
                     Text("· showing the first \(Self.maxCharacters.formatted()) characters")
@@ -241,19 +247,20 @@ private struct TextPane: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(monospaced ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                .help("Show as code")
+                .help(content.formatted != nil ? "Show the Markdown as written" : "Show as code")
             }
             .font(.system(size: 10.5).monospacedDigit())
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
             .frame(height: 24)
         }
-        // Counting and cutting happen off the main thread: a clip can be megabytes long.
-        .task(id: item.id) {
+        // Counting, cutting and formatting happen off the main thread: a clip can be megabytes long.
+        .task(id: "\(item.id) \(formatsMarkdown)") {
             let text = item.text ?? ""
+            let formats = item.isMarkdown && formatsMarkdown
             content = Content()
-            var measured = await Self.prepare(text)
-            measured.key = item.id.uuidString
+            var measured = await Self.prepare(text, formatting: formats)
+            measured.key = "\(item.id) \(formats)"
             content = measured
         }
     }
@@ -273,22 +280,29 @@ private struct TextPane: View {
         var characters = 0
         var lines = 0
         var truncated = false
+        /// The text formatted, when it's Markdown.
+        var formatted: Formatted?
     }
+
+    /// Lets the formatted text cross back from the background task: it's built there and only
+    /// read on the main thread afterwards.
+    private struct Formatted: @unchecked Sendable { let text: NSAttributedString }
 
     /// Longer clips are cut here: laying out megabytes of text would stall the panel, and the
     /// footer says how much there is in total.
     nonisolated static let maxCharacters = 100_000
 
-    private static func prepare(_ text: String) async -> Content {
-        await Task.detached(priority: .userInitiated) { measure(text) }.value
+    private static func prepare(_ text: String, formatting: Bool) async -> Content {
+        await Task.detached(priority: .userInitiated) { measure(text, formatting: formatting) }.value
     }
 
-    nonisolated private static func measure(_ text: String) -> Content {
+    nonisolated private static func measure(_ text: String, formatting: Bool) -> Content {
         let characters = text.count
         let truncated = characters > maxCharacters
         let shown = truncated ? String(text.prefix(maxCharacters)) : text
         return Content(shown: shown, characters: characters,
-                       lines: shown.lazy.filter(\.isNewline).count + 1, truncated: truncated)
+                       lines: shown.lazy.filter(\.isNewline).count + 1, truncated: truncated,
+                       formatted: formatting ? Formatted(text: Markdown.render(shown, theme: .pane)) : nil)
     }
 }
 
@@ -296,6 +310,8 @@ private struct TextPane: View {
 /// (Space, Esc, ← →) keep working while it has focus because nothing is typed into it.
 private struct TextViewer: NSViewRepresentable {
     let text: String
+    /// Shown instead of `text` unless `monospaced` asks for the text as it was written.
+    let formatted: NSAttributedString?
     let monospaced: Bool
     /// Changes when a different clip is shown, so the text is only handed over when it has to be.
     let key: String
@@ -314,25 +330,36 @@ private struct TextViewer: NSViewRepresentable {
         guard let textView = scroll.documentView as? NSTextView else { return scroll }
         textView.drawsBackground = false
         textView.isEditable = false
-        textView.isRichText = false
         textView.textContainerInset = NSSize(width: 12, height: 10)
         textView.textColor = .labelColor
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let textView = scroll.documentView as? NSTextView else { return }
+        guard let textView = scroll.documentView as? NSTextView, let storage = textView.textStorage else { return }
         let font: NSFont = monospaced
             ? .monospacedSystemFont(ofSize: 12, weight: .regular)
             : .systemFont(ofSize: 13)
         let identity = key + String(monospaced)
         // The second half catches a text view that ended up empty anyway, rather than leaving
         // the pane blank until the next clip.
-        let isEmpty = textView.textStorage?.length == 0
+        let isEmpty = storage.length == 0
         guard context.coordinator.shown != identity || (isEmpty && !text.isEmpty) else { return }
         context.coordinator.shown = identity
-        textView.font = font
-        textView.string = text
+        if let formatted, !monospaced {
+            storage.setAttributedString(formatted)
+        } else {
+            // Replaced whole, attributes included, so nothing carries over from formatted text.
+            storage.setAttributedString(NSAttributedString(string: text, attributes: [
+                .font: font, .foregroundColor: NSColor.labelColor,
+            ]))
+        }
+        // Code blocks, quotes and tables switch the view to TextKit 1, which lays out a long
+        // text all at once unless it's told it may skip what isn't on screen. (Asking a
+        // TextKit 2 view for its layout manager would switch it too, so only ask once it has.)
+        if textView.textLayoutManager == nil {
+            textView.layoutManager?.allowsNonContiguousLayout = true
+        }
         textView.scroll(.zero)
     }
 }

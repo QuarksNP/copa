@@ -6,6 +6,7 @@ Everything you copy is saved automatically. Hover the notch and your history ope
 
 - **Click** a card to copy it again, then paste with ⌘V.
 - **Preview** a card to read it without copying it: hover it and click the eye, or press **Space**. The panel opens out and shows the whole thing — all of a long text (selectable, with a code view for anything you'd rather read in a monospaced font), the image at a real size, a link's full address, every path of a file clip, a color with its hex and RGB. ← → move to the card before or after, **Space** or **Esc** goes back, **Return** copies and closes.
+- **Markdown** you copy (a chatbot's answer, a README, notes from Obsidian) shows formatted: headings, lists, checkboxes, bold and italic, code, quotes and tables. It pastes formatted into apps like Notes, Mail, Pages or Google Docs, while code editors and Terminal still get the Markdown as written. In the preview, the code view shows the Markdown itself. Turn it off with **Format Markdown** in Settings.
 - **Drag** a card into any app (Mail, Slack, Finder, Notes…).
 - **Drop** anything (files, images, text, links) onto the notch. Copa saves it and sorts it into the right tab.
 - **Screenshots** you take (⇧⌘3, ⇧⌘4, ⇧⌘5) show up in Images automatically, ready to copy again. The notch shows a spinner the moment you take one.
@@ -78,6 +79,7 @@ The moment you take a screenshot, the notch widens with a spinner, like the Dyna
 - Open at login
 - Save screenshots to Copa
 - Show link previews
+- Format Markdown
 - Pause capturing
 - History size: 100 / 250 / 500 (default) / 1000 / everything. Pinned clips, and clips you filed in a folder or section, are never removed.
 - Clear history (leaves pinned and filed clips alone)
@@ -97,6 +99,7 @@ Copa/
 │   ├── ClipStore+Filing     Sections and folders; moving clips between them
 │   ├── BlobStore            Stores images and thumbnails on disk
 │   ├── LinkPreviewLoader    Fetches link title/image/icon (LinkPresentation)
+│   ├── Markdown             Recognizes Markdown; formats it for cards, preview, pasting
 │   ├── ScreenshotWatcher    Picks up new screenshots via Spotlight
 │   └── PasteboardWriter     Copy back to clipboard, drag & drop helpers
 ├── Notch/

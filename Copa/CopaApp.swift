@@ -44,5 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         app.monitor.start()
         app.screenshots.start()
         notch = NotchController(app: app)
+        Task { await app.store.detectMarkdownInOlderClips() }
     }
 }
